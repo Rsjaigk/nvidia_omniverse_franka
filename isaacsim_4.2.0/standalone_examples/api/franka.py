@@ -4,11 +4,12 @@ simulation_app = SimulationApp({"headless": False}) # headless mode is False to 
 from omni.isaac.core import World
 from omni.isaac.franka import Franka
 from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
-from omni.isaac.core.objects import DynamicCuboid, DynamicSphere
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.types import ArticulationAction
-from omni.isaac.core.utils import extensions, prims
+from omni.isaac.core.utils import extensions, prims, rotations
 from omni.isaac.nucleus import get_assets_root_path
+from omni.physx.scripts import utils
+from pxr import Gf
 import numpy as np
 import rosgraph
 import carb
@@ -31,9 +32,17 @@ if assets_root_path is None:
     sys.exit()
 
 BACKGROUND_STAGE_PATH = "/background"
-BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
+BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
+
 FRANKA_STAGE_PATH = "/World/Franka"
+
+TABLE_STAGE_PATH = "/World/table"
+TABLE_USD_PATH = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/ArchVis/Residential/Furniture/DiningSets/EastRural/EastRural_Table.usd"
 BIN_USD_PATH = assets_root_path + "/Isaac/Props/KLT_Bin/small_KLT.usd"
+
+ORANGE_USD_PATH = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/ArchVis/Residential/Decor/Tchotchkes/Orange_02.usd"
+POMEGRENATE_USD_PATH = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/ArchVis/Residential/Food/Fruit/Pomegranate01.usd"
+
 
 
 world = World()
@@ -41,104 +50,147 @@ add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_
 
 franka = world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH,
                                 name="franka",
-                                position=np.array([0, 0, 0.0])))
+                                position=np.array([-1.92, 4.12, 1.163])))
+
+table = prims.create_prim(
+    TABLE_STAGE_PATH,
+    "Xform",
+    position=np.array([-1.461, 4.113, 0.00]),
+    scale=np.array([0.014, 0.013, 0.01522]),
+    usd_path=TABLE_USD_PATH,
+)
+
+table_prim = world.stage.GetPrimAtPath(TABLE_STAGE_PATH)
+franka_prim = world.stage.GetPrimAtPath("/World/Franka")
+
+utils.setRigidBody(table_prim, "convexDecomposition", False)
 
 
 left_bin = prims.create_prim(
-    "/World/binleft",
+    "/World/Bins/binleft",
     "Xform",
-    position=np.array([0.289, -0.524, 0.065]),
+    position=np.array([-1.64, 3.6, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
 
 middle_bin = prims.create_prim(
-    "/World/binmiddle",
+    "/World/Bins/binmiddle",
     "Xform",
-    position=np.array([0.73, 0.015, 0.065]),
+    position=np.array([-1.180, 4.13, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
 
 right_bin = prims.create_prim(
-    "/World/binright",
+    "/World/Bins/binright",
     "Xform",
-    position=np.array([0.236, 0.48, 0.065]),
+    position=np.array([-1.65, 4.6, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
 
-# Add cubes
-cube_1 =  world.scene.add(
-    DynamicCuboid(
-        prim_path="/World/cube1",
-        name="cube1",
-        position=np.array([0.187, 0.382, 0.0365]),
-        scale=np.array([0.05, 0.05, 0.05]),
-        color=np.array([0, 0, 1.0]),
-    ))
+orange1 = prims.create_prim(
+    "/World/Fruits/orange1",
+    "Xform",
+    position=np.array([-1.722, 3.69, 1.19]),
+    scale=np.array([0.008, 0.008, 0.008]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=ORANGE_USD_PATH,
+)
 
-cube_2 =  world.scene.add(
-    DynamicCuboid(
-        prim_path="/World/cube2",
-        name="cube2",
-        position=np.array([0.187, 0.551, 0.0365]),
-        scale=np.array([0.05, 0.05, 0.05]),
-        color=np.array([0, 0, 1.0]),
-    ))
+orange2 = prims.create_prim(
+    "/World/Fruits/orange2",
+    "Xform",
+    position=np.array([-1.722, 3.506, 1.19]),
+    scale=np.array([0.008, 0.008, 0.008]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=ORANGE_USD_PATH,
+)
 
-cube_3 =  world.scene.add(
-    DynamicCuboid(
-        prim_path="/World/cube3",
-        name="cube3",
-        position=np.array([0.290, 0.474, 0.0365]),
-        scale=np.array([0.05, 0.05, 0.05]),
-        color=np.array([0, 0, 1.0]),
-    ))
+orange3 = prims.create_prim(
+    "/World/Fruits/orange3",
+    "Xform",
+    position=np.array([-1.60, 3.60, 1.19]),
+    scale=np.array([0.008, 0.008, 0.008]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=ORANGE_USD_PATH,
+)
 
-# Add spheres
-sphere_1 = world.scene.add(
-    DynamicSphere(
-        prim_path="/World/sphere1",
-        name="sphere1",
-        position=np.array([0.246, -0.462, 0.0365]),
-        scale=np.array([0.03, 0.03, 0.03]),
-        color=np.array([0, 0, 0.0]),
-    ))
+pomegranate1 = prims.create_prim(
+    "/World/Fruits/pomegranate1",
+    "Xform",
+    position=np.array([-1.70, 4.514, 1.18]),
+    scale=np.array([0.005, 0.005, 0.005]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
+    usd_path=POMEGRENATE_USD_PATH,
+)
 
-sphere_2 = world.scene.add(
-    DynamicSphere(
-        prim_path="/World/sphere2",
-        name="sphere2",
-        position=np.array([0.246, -0.620, 0.0365]),
-        scale=np.array([0.03, 0.03, 0.03]),
-        color=np.array([0, 0, 0.0]),    
-    ))
+pomegranate2 = prims.create_prim(
+    "/World/Fruits/pomegranate2",
+    "Xform",
+    position=np.array([-1.70, 4.684, 1.18]),
+    scale=np.array([0.005, 0.005, 0.005]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 60)),
+    usd_path=POMEGRENATE_USD_PATH,
+)
 
-sphere_3 = world.scene.add(
-    DynamicSphere(
-        prim_path="/World/sphere3",
-        name="sphere3",
-        position=np.array([0.345, -0.537, 0.0365]),
-        scale=np.array([0.03, 0.03, 0.03]),
-        color=np.array([0, 0, 0.0]),    
-    ))
+pomegranate3 = prims.create_prim(
+    "/World/Fruits/pomegranate3",
+    "Xform",
+    position=np.array([-1.58, 4.603, 1.18]),
+    scale=np.array([0.005, 0.005, 0.005]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
+    usd_path=POMEGRENATE_USD_PATH,
+)
+
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/orange1"), "boundingSphere", False)
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/orange2"), "boundingSphere", False)
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/orange3"), "boundingSphere", False)
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/pomegranate1"), "boundingSphere", False)
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/pomegranate2"), "boundingSphere", False)
+utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/pomegranate3"), "boundingSphere", False)
+
+world.stage.GetPrimAtPath("/World/Fruits/orange1").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.01)
+world.stage.GetPrimAtPath("/World/Fruits/orange2").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.01)
+world.stage.GetPrimAtPath("/World/Fruits/orange3").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.01)
+world.stage.GetPrimAtPath("/World/Fruits/pomegranate1").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.1)
+world.stage.GetPrimAtPath("/World/Fruits/pomegranate2").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.1)
+world.stage.GetPrimAtPath("/World/Fruits/pomegranate3").GetAttribute("physxRigidBody:contactSlopCoefficient").Set(0.1)
+
+def get_prim_position(stage, path):
+    prim = stage.GetPrimAtPath(path)
+    if prim and prim.HasAttribute("xformOp:translate"):
+        position = prim.GetAttribute("xformOp:translate").Get()
+        return np.array(position)
+    else:
+        return None
+    
+objects = [orange1, orange2, orange3, pomegranate1, pomegranate2, pomegranate3]
+prim_paths = ["/World/Fruits/orange1", "/World/Fruits/orange2", "/World/Fruits/orange3", "/World/Fruits/pomegranate1", "/World/Fruits/pomegranate2", "/World/Fruits/pomegranate3"]
+
+initial_pos = {obj: get_prim_position(world.stage, path) for obj, path in zip(objects, prim_paths)}
+print(initial_pos)
+for obj in objects:
+    if obj in [pomegranate1, pomegranate2, pomegranate3]:
+        initial_pos[obj][2] += 0.01
 
 world.reset()  # Reset the world to apply changes
 
+
+franka.initialize()
 controller = PickPlaceController(name = "pick_place_controller", gripper = franka.gripper, robot_articulation = franka)
 
 franka.gripper.set_joint_positions(franka.gripper.joint_opened_positions)
+#print(franka.dof_names)
+franka.disable_gravity()
+franka.set_stabilization_threshold(0.05)
 
 franka_home = franka.get_joint_positions()
-print(franka_home)
 initial_velocities = franka.get_joint_velocities()
+#print(franka_home)
 
-objects = [cube_1, cube_2, cube_3, sphere_1, sphere_2, sphere_3]
-initial_pos = {obj: obj.get_world_pose()[0] for obj in objects}
-print(initial_pos)
-
-goal_positions = [np.array([0.72, 0.000, 0.0365]), np.array([0.72, -0.115, 0.0365]), np.array([0.72, 0.115, 0.0365])]
+goal_positions = [np.array([-1.187, 4.15, 1.1897]), np.array([-1.187, 4.03, 1.1897]), np.array([-1.187, 4.27, 1.1897])]
 
 selected_objects = random.sample(objects, 3)  
 task = list(zip(selected_objects, goal_positions))
@@ -159,8 +211,12 @@ while simulation_app.is_running():
             controller.reset()
             reset_needed = False
         current_joint_positions = franka.get_joint_positions()
-        #print(current_joint_positions)
+        franka_velocities = franka.get_joint_velocities()
+        print(franka_velocities)
         obj, goal_pos = task[i]
+        picking_position = get_prim_position(world.stage, obj.GetPath())
+        if obj in [pomegranate1, pomegranate2, pomegranate3]:
+            picking_position[2] += 0.01
         if flag == 0:
             picking_position = initial_pos[obj]
             placing_position = goal_pos
@@ -171,20 +227,20 @@ while simulation_app.is_running():
             picking_position=picking_position,
             placing_position=placing_position,
             current_joint_positions=current_joint_positions,
-            end_effector_offset=np.array([0, 0.005, 0]),
         )
-
+        #print(f"Object: {obj}, Picking Position: {picking_position}, Placing Position: {placing_position}")
         franka.apply_action(actions)
 
         if controller.is_done():
             controller.reset()
             i += 1
+            print(f"Task {i} completed")
             if i == 3:
                 i = 0
                 flag = 1 - flag
                 if flag == 0:
-                    franka.apply_action(ArticulationAction(joint_positions=franka_home)) 
-                    while delay < 5:
+                    franka.apply_action(ArticulationAction(joint_positions=franka_home, joint_velocities=initial_velocities))
+                    while delay < 10:
                         world.step(render=True)
                         delay += 1                  
                 delay = 0
