@@ -6,17 +6,31 @@ from omni.isaac.franka import Franka
 from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.types import ArticulationAction
-from omni.isaac.core.utils import extensions, prims, rotations
+from omni.isaac.core.utils import extensions, prims, rotations, viewports
 from omni.isaac.nucleus import get_assets_root_path
 from omni.physx.scripts import utils
-from pxr import Gf
+from pxr import Gf, UsdGeom
 import numpy as np
 import rosgraph
 import carb
 import sys
+import omni
 import random
 
-extensions.enable_extension("omni.isaac.ros_bridge")
+EXTENSIONS = [
+    'omni.anim.timeline',
+    'omni.anim.people',
+    'omni.kit.scripting',
+    'omni.anim.curve.core',
+    'omni.anim.curve.bundle',
+    'omni.anim.curve_editor',
+    'omni.isaac.ros_bridge',
+    'omni.anim.navigation.bundle',
+    'omni.anim.graph.bundle',
+]   
+
+for exts in EXTENSIONS:
+    extensions.enable_extension(exts)
 
 simulation_app.update()
 
@@ -43,7 +57,15 @@ BIN_USD_PATH = assets_root_path + "/Isaac/Props/KLT_Bin/small_KLT.usd"
 ORANGE_USD_PATH = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/ArchVis/Residential/Decor/Tchotchkes/Orange_02.usd"
 POMEGRENATE_USD_PATH = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/ArchVis/Residential/Food/Fruit/Pomegranate01.usd"
 
+WORKER1_USD_PATH = assets_root_path + "/Isaac/People/Characters/male_adult_construction_05_new/male_adult_construction_05_new.usd"
+WORKER2_USD_PATH = assets_root_path + "/Isaac/People/Characters/male_adult_construction_01_new/male_adult_construction_01_new.usd"
+WORKER3_USD_PATH = assets_root_path + "/Isaac/People/Characters/male_adult_construction_05_new/male_adult_construction_05_new.usd"
+WORKER4_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_male_adult_construction_01/male_adult_construction_01.usd"
+DOCTOR_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_male_adult_medical_01/male_adult_medical_01.usd"
+POLICE_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_female_adult_police_02/female_adult_police_02.usd"
+BIPED_SETUP_USD_PATH = assets_root_path + "/Isaac/People/Characters/Biped_Setup.usd"
 
+viewports.set_camera_view(eye=np.array([5, 4.2, 4]), target=np.array([-50, 4, -15]))
 
 world = World()
 add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH)
@@ -51,6 +73,40 @@ add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_
 franka = world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH,
                                 name="franka",
                                 position=np.array([-1.92, 4.12, 1.163])))
+
+
+camera_prim1 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera1", "Camera"))
+xform_api = UsdGeom.XformCommonAPI(camera_prim1)
+#xform_api.SetTranslate(Gf.Vec3d(2, 4.2, 4))
+xform_api.SetTranslate(Gf.Vec3d(0, 4.1, 3))
+xform_api.SetRotate((26, -0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+camera_prim1.GetHorizontalApertureAttr().Set(36)     # mm
+camera_prim1.GetVerticalApertureAttr().Set(20.25)    # mm (for 16:9 aspect ratio)
+camera_prim1.GetProjectionAttr().Set("perspective")
+
+camera_prim1.GetFocalLengthAttr().Set(35)            # mm — sharper, less distortion than 24mm
+camera_prim1.GetFocusDistanceAttr().Set(2500)        # mm (2.5 meters — adjust to your scene)
+
+
+camera_prim2 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera2", "Camera"))
+xform_api = UsdGeom.XformCommonAPI(camera_prim2)
+xform_api.SetTranslate(Gf.Vec3d(-1.5, 7.7, 2.75))
+xform_api.SetRotate((72, -0.0, 180), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+camera_prim2.GetHorizontalApertureAttr().Set(21)
+camera_prim2.GetVerticalApertureAttr().Set(16)
+camera_prim2.GetProjectionAttr().Set("perspective")
+camera_prim2.GetFocalLengthAttr().Set(24)
+camera_prim2.GetFocusDistanceAttr().Set(400)
+
+camera_prim3 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera3", "Camera"))
+xform_api = UsdGeom.XformCommonAPI(camera_prim3)
+xform_api.SetTranslate(Gf.Vec3d(9.4, -11.5, 6.3))
+xform_api.SetRotate((68.5, -0.0, 36), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+camera_prim3.GetHorizontalApertureAttr().Set(21)
+camera_prim3.GetVerticalApertureAttr().Set(16)
+camera_prim3.GetProjectionAttr().Set("perspective")
+camera_prim3.GetFocalLengthAttr().Set(24)
+camera_prim3.GetFocusDistanceAttr().Set(400)
 
 table = prims.create_prim(
     TABLE_STAGE_PATH,
@@ -143,6 +199,73 @@ pomegranate3 = prims.create_prim(
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
     usd_path=POMEGRENATE_USD_PATH,
 )
+
+
+character1 = prims.create_prim(
+    "/World/Characters/character1",
+    "Xform",
+    position=np.array([-1.461, -5.183, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 180)),
+    usd_path=WORKER1_USD_PATH,
+)
+
+character2 = prims.create_prim(
+    "/World/Characters/character2",
+    "Xform",
+    position=np.array([-6.58, 4.113, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=WORKER2_USD_PATH,
+)
+
+character3 = prims.create_prim(
+    "/World/Characters/character3",
+    "Xform",
+    position=np.array([-1.461, 15.659, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
+    usd_path=WORKER3_USD_PATH,
+)
+
+character4 = prims.create_prim(
+    "/World/Characters/character4",
+    "Xform",
+    position=np.array([4.298, 4.113, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), -90)),
+    usd_path=WORKER4_USD_PATH,
+)
+
+character5 = prims.create_prim(
+    "/World/Characters/character5",
+    "Xform",
+    position=np.array([-4.34, 12.678, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
+    usd_path=DOCTOR_USD_PATH,
+)
+
+character6 = prims.create_prim(
+    "/World/Characters/character6",
+    "Xform",
+    position=np.array([8.186, -5.37, 0.00]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 180)),
+    usd_path=POLICE_USD_PATH,
+)
+
+character7 = prims.create_prim(
+    "/World/Characters/Biped_Setup",
+    "Xform",
+    position=np.array([0, 0, 0]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 180)),
+    usd_path=BIPED_SETUP_USD_PATH,
+)
+
+
+world.stage.GetPrimAtPath("/World/Characters/Biped_Setup").GetAttribute("visibility").Set("invisible")
 
 utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/orange1"), "boundingSphere", False)
 utils.setRigidBody(world.stage.GetPrimAtPath("/World/Fruits/orange2"), "boundingSphere", False)
