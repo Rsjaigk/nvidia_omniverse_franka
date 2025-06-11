@@ -3,14 +3,17 @@ simulation_app = SimulationApp({"headless": False}) # headless mode is False to 
 
 from omni.isaac.core import World
 from omni.isaac.franka import Franka
+from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
 from omni.isaac.core.objects import DynamicCuboid, DynamicSphere
 from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.core.utils.types import ArticulationAction
 from omni.isaac.core.utils import extensions, prims
 from omni.isaac.nucleus import get_assets_root_path
 import numpy as np
 import rosgraph
 import carb
 import sys
+import random
 
 extensions.enable_extension("omni.isaac.ros_bridge")
 
@@ -34,7 +37,8 @@ BIN_USD_PATH = assets_root_path + "/Isaac/Props/KLT_Bin/small_KLT.usd"
 
 
 world = World()
-world.scene.add_default_ground_plane()  # Add a ground plane to the scene
+add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH)
+
 franka = world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH,
                                 name="franka",
                                 position=np.array([0, 0, 0.0])))
@@ -122,21 +126,68 @@ sphere_3 = world.scene.add(
 
 world.reset()  # Reset the world to apply changes
 
+controller = PickPlaceController(name = "pick_place_controller", gripper = franka.gripper, robot_articulation = franka)
+
+franka.gripper.set_joint_positions(franka.gripper.joint_opened_positions)
+
+franka_home = franka.get_joint_positions()
+print(franka_home)
+initial_velocities = franka.get_joint_velocities()
+
+objects = [cube_1, cube_2, cube_3, sphere_1, sphere_2, sphere_3]
+initial_pos = {obj: obj.get_world_pose()[0] for obj in objects}
+print(initial_pos)
+
+goal_positions = [np.array([0.72, 0.000, 0.0365]), np.array([0.72, -0.115, 0.0365]), np.array([0.72, 0.115, 0.0365])]
+
+selected_objects = random.sample(objects, 3)  
+task = list(zip(selected_objects, goal_positions))
+
 
 i = 0
+delay = 0
+flag = 0 # 0 for moving from initial to goal position, 1 for moving from goal to initial position
 reset_needed = False
 
 while simulation_app.is_running():
-    world.step(render=True)  # Step the world, render the scene
+    world.step(render=True)
     if world.is_stopped() and not reset_needed:
         reset_needed = True
-    
     if world.is_playing():
         if reset_needed:
             world.reset()
+            controller.reset()
             reset_needed = False
-        i += 1
+        current_joint_positions = franka.get_joint_positions()
+        #print(current_joint_positions)
+        obj, goal_pos = task[i]
+        if flag == 0:
+            picking_position = initial_pos[obj]
+            placing_position = goal_pos
+        else:
+            picking_position = goal_pos
+            placing_position = initial_pos[obj]
+        actions = controller.forward(   
+            picking_position=picking_position,
+            placing_position=placing_position,
+            current_joint_positions=current_joint_positions,
+            end_effector_offset=np.array([0, 0.005, 0]),
+        )
 
+        franka.apply_action(actions)
 
-simulation_app.close()  # Close Isaac Sim
+        if controller.is_done():
+            controller.reset()
+            i += 1
+            if i == 3:
+                i = 0
+                flag = 1 - flag
+                if flag == 0:
+                    franka.apply_action(ArticulationAction(joint_positions=franka_home)) 
+                    while delay < 5:
+                        world.step(render=True)
+                        delay += 1                  
+                delay = 0
+
+simulation_app.close() # close Isaac Sim
 
