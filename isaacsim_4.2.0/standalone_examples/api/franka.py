@@ -1,21 +1,7 @@
 from isaacsim import SimulationApp
 simulation_app = SimulationApp({"headless": False}) # headless mode is False to visualize the simulation
 
-from omni.isaac.core import World
-from omni.isaac.franka import Franka
-from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
-from omni.isaac.core.utils.stage import add_reference_to_stage
-from omni.isaac.core.utils.types import ArticulationAction
 from omni.isaac.core.utils import extensions, prims, rotations, viewports
-from omni.isaac.nucleus import get_assets_root_path
-from omni.physx.scripts import utils
-from pxr import Gf, UsdGeom
-import numpy as np
-import rosgraph
-import carb
-import sys
-import omni
-import random
 
 EXTENSIONS = [
     'omni.anim.timeline',
@@ -34,6 +20,23 @@ for exts in EXTENSIONS:
 
 simulation_app.update()
 
+from omni.isaac.core import World
+from omni.isaac.franka import Franka
+from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
+from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.core.utils.types import ArticulationAction
+from omni.isaac.nucleus import get_assets_root_path
+from omni.physx.scripts import utils
+from pxr import Gf, UsdGeom
+import omni.graph.core as og
+import usdrt.Sdf
+import numpy as np
+import rosgraph
+import carb
+import sys
+import omni
+import random
+
 if not rosgraph.is_master_online():
     carb.log_error("Please run roscore before executing this script")
     simulation_app.close()
@@ -45,7 +48,7 @@ if assets_root_path is None:
     simulation_app.close()
     sys.exit()
 
-BACKGROUND_STAGE_PATH = "/background"
+BACKGROUND_STAGE_PATH = "/World/background"
 BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
 
 FRANKA_STAGE_PATH = "/World/Franka"
@@ -64,6 +67,7 @@ WORKER4_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_male_ad
 DOCTOR_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_male_adult_medical_01/male_adult_medical_01.usd"
 POLICE_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_female_adult_police_02/female_adult_police_02.usd"
 BIPED_SETUP_USD_PATH = assets_root_path + "/Isaac/People/Characters/Biped_Setup.usd"
+HAND_PATH = "omniverse://localhost/custom_assets/humanhand.usd"
 
 viewports.set_camera_view(eye=np.array([5, 4.2, 4]), target=np.array([-50, 4, -15]))
 
@@ -74,6 +78,57 @@ franka = world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH,
                                 name="franka",
                                 position=np.array([-1.92, 4.12, 1.163])))
 
+
+try:
+    og.Controller.edit(
+        {"graph_path": "/World/ActionGraph", "evaluator_name": "execution"},
+        {
+            og.Controller.Keys.CREATE_NODES: [
+                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+                ("IsaacCreateRenderProduct", "omni.isaac.core_nodes.IsaacCreateRenderProduct"),
+                ("ROS1CameraHelper", "omni.isaac.ros_bridge.ROS1CameraHelper"),
+                ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+                ("PublishJointState", "omni.isaac.ros_bridge.ROS1PublishJointState"),
+                ("SubscribeJointState", "omni.isaac.ros_bridge.ROS1SubscribeJointState"),
+                ("ArticulationController", "omni.isaac.core_nodes.IsaacArticulationController"),
+                ("PublishTF", "omni.isaac.ros_bridge.ROS1PublishTransformTree"),
+                ("PublishClock", "omni.isaac.ros_bridge.ROS1PublishClock"),
+            ],
+            og.Controller.Keys.CONNECT: [
+                ("OnPlaybackTick.outputs:tick", "PublishJointState.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "SubscribeJointState.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "PublishTF.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "PublishClock.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "IsaacCreateRenderProduct.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
+                ("ReadSimTime.outputs:simulationTime", "PublishJointState.inputs:timeStamp"),
+                ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
+                ("ReadSimTime.outputs:simulationTime", "PublishTF.inputs:timeStamp"),
+                ("SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
+                ("SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
+                ("SubscribeJointState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
+                ("SubscribeJointState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"),
+                ("IsaacCreateRenderProduct.outputs:execOut", "ROS1CameraHelper.inputs:execIn"),
+                ("IsaacCreateRenderProduct.outputs:renderProductPath", "ROS1CameraHelper.inputs:renderProductPath"),
+            ],
+            og.Controller.Keys.SET_VALUES: [
+                # Setting the /Franka target prim to Articulation Controller node
+                ("ArticulationController.inputs:robotPath", FRANKA_STAGE_PATH),
+                ("PublishJointState.inputs:targetPrim", [usdrt.Sdf.Path(FRANKA_STAGE_PATH)]),
+                ("PublishTF.inputs:targetPrims", [
+                    usdrt.Sdf.Path(FRANKA_STAGE_PATH),
+                    usdrt.Sdf.Path("/World/Hand/Hand1"),
+                    usdrt.Sdf.Path("/World/Hand/Hand2"),
+                    usdrt.Sdf.Path("/World/Hand/Hand3")
+                ]), 
+                ("IsaacCreateRenderProduct.inputs:cameraPrim", [usdrt.Sdf.Path("/World/camera1")]),
+            ],
+        },
+    )
+except Exception as e:
+    print(e)
+
+simulation_app.update()
 
 camera_prim1 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera1", "Camera"))
 xform_api = UsdGeom.XformCommonAPI(camera_prim1)
@@ -200,6 +255,35 @@ pomegranate3 = prims.create_prim(
     usd_path=POMEGRENATE_USD_PATH,
 )
 
+
+hands1 = prims.create_prim(
+    "/World/Hand/Hand1",
+    "Xform",
+    position=(-0.5, 0.7, 1.5),
+    scale=(0.0003, 0.0003, 0.0003),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=HAND_PATH,
+)
+
+
+hands2 = prims.create_prim(
+    "/World/Hand/Hand2",
+    "Xform",
+    position=(1, 4.5, 1.2),
+    scale=(0.0003, 0.0003, 0.0003),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=HAND_PATH,
+)
+
+# Create the hand prim
+hands3 = prims.create_prim(
+    "/World/Hand/Hand3",
+    "Xform",
+    position=(-0.3, 7.3, 1.8),
+    scale=(0.0003, 0.0003, 0.0003),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
+    usd_path=HAND_PATH,
+)
 
 character1 = prims.create_prim(
     "/World/Characters/character1",
