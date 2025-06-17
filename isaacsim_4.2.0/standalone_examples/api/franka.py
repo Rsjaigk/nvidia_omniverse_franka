@@ -70,6 +70,7 @@ DOCTOR_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_male_adu
 POLICE_USD_PATH = assets_root_path + "/Isaac/People/Characters/original_female_adult_police_02/female_adult_police_02.usd"
 BIPED_SETUP_USD_PATH = assets_root_path + "/Isaac/People/Characters/Biped_Setup.usd"
 HAND_PATH = "omniverse://localhost/custom_assets/humanhand.usd"
+CUBE_USD_PATH = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Props/Blocks/nvidia_cube.usd"
 
 viewports.set_camera_view(eye=np.array([5, 4.2, 4]), target=np.array([-50, 4, -15]))
 
@@ -202,6 +203,23 @@ right_bin = prims.create_prim(
     usd_path=BIN_USD_PATH,
 )
 
+
+left_bin_human = prims.create_prim(
+    "/World/Bins/binlefthuman",
+    "Xform",
+    position=np.array([-1.12, 3.52, 1.22]),
+    scale=np.array([1.5, 1.5, 0.8]),
+    usd_path=BIN_USD_PATH,
+)
+
+right_bin_human = prims.create_prim(
+    "/World/Bins/binrighthuman",
+    "Xform",
+    position=np.array([-1.12, 4.73, 1.22]),
+    scale=np.array([1.5, 1.5, 0.8]),
+    usd_path=BIN_USD_PATH,
+)
+
 orange1 = prims.create_prim(
     "/World/Fruits/orange1",
     "Xform",
@@ -256,6 +274,29 @@ pomegranate3 = prims.create_prim(
     usd_path=POMEGRENATE_USD_PATH,
 )
 
+
+cube_1 = prims.create_prim(
+        "/World/Cube/cube1",
+        "Xform",
+        position=np.array([-1.12, 3.41, 1.19]),
+        scale=np.array([0.8, 0.8, 0.8]),
+        usd_path=CUBE_USD_PATH,
+    )
+
+cube_2 = prims.create_prim(
+        "/World/Cube/cube2",
+        "Xform",
+        position=np.array([-1.12, 3.51, 1.19]),
+        scale=np.array([0.8, 0.8, 0.8]),
+        usd_path=CUBE_USD_PATH,
+    )
+cube_3 = prims.create_prim(
+        "/World/Cube/cube3",
+        "Xform",
+        position=np.array([-1.12, 3.61, 1.19]),
+        scale=np.array([0.8, 0.8, 0.8]),
+        usd_path = CUBE_USD_PATH,
+    )
 
 hands1 = prims.create_prim(
     "/World/Hand/Hand1",
