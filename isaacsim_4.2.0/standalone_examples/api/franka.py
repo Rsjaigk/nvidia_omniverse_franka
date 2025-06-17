@@ -612,15 +612,40 @@ delay = 0
 flag = 0 # 0 for moving from initial to goal position, 1 for moving from goal to initial position
 reset_needed = False
 
+index = random.choice([3, 6, 9, 12, 15])
+print(f"Selected index at start: {index}")
+
 while simulation_app.is_running():
     world.step(render=True)
+    
     if world.is_stopped() and not reset_needed:
         reset_needed = True
+        current_frame = 0
+        frame_offset = 0
+        direction_flag = 0
+        action_queue.clear()
+        force_detach_all_cubes()
+        reset_cubes_to_initial_positions()
+
     if world.is_playing():
         if reset_needed:
             world.reset()
             controller.reset()
             reset_needed = False
+
+        current_frame += 1
+
+        handle_actions(current_frame)
+            
+        for j in range(3):
+           animate_hands_cubes(j, direction_flag, frame_offset + j * (cycle_gap//index))
+
+        if current_frame >= frame_offset + cycle_duration:
+            direction_flag = 1 - direction_flag
+            frame_offset = current_frame
+            index = random.choice([3, 6, 9, 12, 15])
+            print(f"Selected index: {index}") 
+
         current_joint_positions = franka.get_joint_positions()
         franka_velocities = franka.get_joint_velocities()
         print(franka_velocities)
