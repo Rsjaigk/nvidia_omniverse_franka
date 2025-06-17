@@ -405,6 +405,16 @@ task = list(zip(selected_objects, goal_positions))
 
 stage = omni.usd.get_context().get_stage()
 
+prim_paths = ["/World/Cube/cube1", "/World/Cube/cube2", "/World/Cube/cube3"]
+
+initial_pos_cube = {f"cube{i+1}": get_prim_position(stage, path) for i, path in enumerate(prim_paths[:3])}
+
+final_pos_cube = {
+    "cube1": np.array([-1.12, 4.63, 1.19]),
+    "cube2": np.array([-1.12, 4.73, 1.19]),
+    "cube3": np.array([-1.12, 4.83, 1.19]),
+}
+
 hand_paths = ["/World/Hand/Hand1", "/World/Hand/Hand2", "/World/Hand/Hand3"]
 hand_positions = [get_prim_position(stage, path) for path in hand_paths]   
 
@@ -481,6 +491,80 @@ def handle_actions(frame_now):
                 attach_cube_to_hand(child_name, parent)
             elif action == "detach":
                 detach_cube_from_hand(child_name, parent)
+
+
+def animate_hands_cubes(index, direction, offset):
+    cube_name = f"cube{index+1}"
+    cube_path = f"/World/Cube/{cube_name}"
+    cube_position = initial_pos_cube[cube_name] if direction == 0 else final_pos_cube[cube_name]
+    #print(f"Animating {cube_name} at {cube_position}")
+    hand_path = hand_paths[index]
+    hand_home_x, hand_home_y, home_z = hand_positions[index]
+
+    from_ys = bin1_ys if direction == 0 else bin2_ys
+    to_ys = bin2_ys if direction == 0 else bin1_ys
+
+    from_y = from_ys[index]
+    to_y = to_ys[index]
+
+    #print(f"Animating hand {index} from {from_y} to {to_y}")
+
+    hand = stage.GetPrimAtPath(hand_path)
+    hand_xform = UsdGeom.Xformable(hand)
+    hand_translate = hand_xform.AddTranslateOp() if not hand_xform.GetOrderedXformOps() else hand_xform.GetOrderedXformOps()[0]
+
+    f0 = offset
+    f_above = f0 + 20 * speed_factor
+    f_dip = f0 + 22 * speed_factor
+    f_attach = f0 + 23 * speed_factor
+    f_lift = f0 + 30 * speed_factor
+    f_move = f0 + 40 * speed_factor 
+    f_drop = f0 + 50 * speed_factor
+    f_detach = f0 + 51 * speed_factor 
+    f_lift_after_drop = f0 + 60 * speed_factor
+    f_return = f0 + 80 * speed_factor
+
+    hand_translate.GetAttr().Set(Gf.Vec3f(hand_home_x, hand_home_y, home_z), time=f0)
+    hand_translate.GetAttr().Set(Gf.Vec3f(start_x, from_y, hover_z), time=f_above)
+    hand_translate.GetAttr().Set(Gf.Vec3f(start_x, from_y, grip_z), time=f_dip)
+    hand_translate.GetAttr().Set(Gf.Vec3f(start_x, from_y, hover_z), time=f_lift)
+    hand_translate.GetAttr().Set(Gf.Vec3f(end_x, to_y, hover_z), time=f_move)
+    hand_translate.GetAttr().Set(Gf.Vec3f(end_x, to_y, grip_z), time=f_drop)
+    hand_translate.GetAttr().Set(Gf.Vec3f(end_x, to_y, grip_z), time=f_detach)
+    hand_translate.GetAttr().Set(Gf.Vec3f(end_x, to_y, hover_z), time=f_lift_after_drop)
+    hand_translate.GetAttr().Set(Gf.Vec3f(hand_home_x, hand_home_y, hover_z), time=f_return)
+
+    # Schedule cube attach/detach
+    action_queue.append((f_attach, "attach", cube_name, hand_path))
+    action_queue.append((f_detach, "detach", cube_name, hand_path))
+
+def force_detach_all_cubes():
+    for i in range(3):
+        cube_name = f"cube{i+1}"
+        hand_path = hand_paths[i]
+        cube_in_hand_path = f"{hand_path}/{cube_name}"
+        world_cube_path = f"/World/Cube/{cube_name}"
+
+        prim = stage.GetPrimAtPath(cube_in_hand_path)
+        if prim and prim.IsValid():
+            omni.kit.commands.execute(
+                "MovePrim",
+                path_from=cube_in_hand_path,
+                path_to=world_cube_path,
+            )
+
+def reset_cubes_to_initial_positions():
+    for cube_name, initial_position in initial_pos_cube.items():
+        cube_path = f"/World/Cube/{cube_name}"
+        cube = stage.GetPrimAtPath(cube_path)
+        cube_xform = UsdGeom.Xformable(cube)
+        
+        if cube_xform:
+            translate_ops = cube_xform.GetOrderedXformOps()
+            if translate_ops:
+                translate_ops[0].Set(Gf.Vec3f(initial_position[0], initial_position[1], initial_position[2]))
+            else:
+                cube_xform.AddTranslateOp().Set(Gf.Vec3f(initial_position[0], initial_position[1], initial_position[2]))
 
 i = 0
 delay = 0
