@@ -23,11 +23,12 @@ simulation_app.update()
 from omni.isaac.core import World
 from omni.isaac.franka import Franka
 from omni.isaac.franka.controllers.pick_place_controller import PickPlaceController
+from omni.isaac.core.utils.transformations import pose_from_tf_matrix
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.core.utils.types import ArticulationAction
 from omni.isaac.nucleus import get_assets_root_path
 from omni.physx.scripts import utils
-from pxr import Gf, UsdGeom
+from pxr import Gf, UsdGeom, Usd
 import omni.graph.core as og
 import usdrt.Sdf
 import numpy as np
@@ -36,8 +37,18 @@ import carb
 import sys
 import omni
 import random
+import rospy
+from geometry_msgs.msg import Pose
 from typing import Tuple
 
+# Initialize the ROS node
+rospy.init_node("hand_pose_publisher", anonymous=True)
+
+# Create a publisher for each hand
+hand_publishers = [
+    rospy.Publisher(f"/hand{idx+1}/pose", Pose, queue_size=10)
+    for idx in range(3)
+]
 
 if not rosgraph.is_master_online():
     carb.log_error("Please run roscore before executing this script")
@@ -476,6 +487,13 @@ direction_flag = 0
 current_frame = 0
 action_queue = []
 
+def get_world_pose(prim: Usd.Prim, current_frame: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Get the world-space position and orientation (quaternion) of a prim at the current simulation time."""
+    transform = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode(current_frame))
+    transform = np.transpose(transform)  # Convert from row-major to column-major
+    translation, orientation = pose_from_tf_matrix(transform)
+    return translation, orientation
+
 def attach_cube_to_hand(cube_name, hand_path):
     omni.kit.commands.execute(
         "MovePrim",
@@ -646,6 +664,27 @@ while simulation_app.is_running():
             index = random.choice([3, 6, 9, 12, 15])
             print(f"Selected index: {index}") 
 
+        for hand_index, hand_path in enumerate(hand_paths):
+            hand_prim = stage.GetPrimAtPath(hand_path)
+            if hand_prim.IsValid():
+                pos, rot = get_world_pose(hand_prim, current_frame)
+
+                # Publish to ROS
+                pose_msg = Pose()
+                pose_msg.position.x = pos[0]
+                pose_msg.position.y = pos[1]
+                pose_msg.position.z = pos[2]
+                pose_msg.orientation.x = rot[0]
+                pose_msg.orientation.y = rot[1]
+                pose_msg.orientation.z = rot[2]
+                pose_msg.orientation.w = rot[3]
+
+                hand_publishers[hand_index].publish(pose_msg)
+
+                #print(f"Published Hand {hand_index+1} Position: {pos}, Rotation: {rot}")
+            else:
+                print(f"Invalid prim path for hand {hand_index+1}")
+
         current_joint_positions = franka.get_joint_positions()
         franka_velocities = franka.get_joint_velocities()
         print(franka_velocities)
@@ -682,4 +721,3 @@ while simulation_app.is_running():
                 delay = 0
 
 simulation_app.close() # close Isaac Sim
-
