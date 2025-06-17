@@ -36,6 +36,8 @@ import carb
 import sys
 import omni
 import random
+from typing import Tuple
+
 
 if not rosgraph.is_master_online():
     carb.log_error("Please run roscore before executing this script")
@@ -132,7 +134,6 @@ simulation_app.update()
 
 camera_prim1 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera1", "Camera"))
 xform_api = UsdGeom.XformCommonAPI(camera_prim1)
-#xform_api.SetTranslate(Gf.Vec3d(2, 4.2, 4))
 xform_api.SetTranslate(Gf.Vec3d(0, 4.1, 3))
 xform_api.SetRotate((26, -0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 camera_prim1.GetHorizontalApertureAttr().Set(36)     # mm
@@ -402,6 +403,84 @@ goal_positions = [np.array([-1.187, 4.15, 1.1897]), np.array([-1.187, 4.03, 1.18
 selected_objects = random.sample(objects, 3)  
 task = list(zip(selected_objects, goal_positions))
 
+stage = omni.usd.get_context().get_stage()
+
+hand_paths = ["/World/Hand/Hand1", "/World/Hand/Hand2", "/World/Hand/Hand3"]
+hand_positions = [get_prim_position(stage, path) for path in hand_paths]   
+
+
+start_x = end_x = -1.12
+start_z = 1.19
+hover_z = 1.4
+grip_z = 1.27
+
+bin1_ys = [3.41, 3.51, 3.61]
+bin2_ys = [4.63, 4.73, 4.83]
+
+speed_factor = 5
+cycle_gap = 120 * speed_factor
+cycle_duration = 1.5 * cycle_gap
+frame_offset = 0
+direction_flag = 0
+current_frame = 0
+action_queue = []
+
+def attach_cube_to_hand(cube_name, hand_path):
+    omni.kit.commands.execute(
+        "MovePrim",
+        path_from=f"/World/Cube/{cube_name}",
+        path_to=f"{hand_path}/{cube_name}"
+    )
+
+    cube_path = f"{hand_path}/{cube_name}"
+    cube = stage.GetPrimAtPath(cube_path)
+    cube_xform = UsdGeom.Xformable(cube)
+
+    if not cube_xform:
+        print(f"Could not find Xformable for {cube_path}")
+        return
+
+    translate_ops = cube_xform.GetOrderedXformOps()
+    if translate_ops:
+        translate_ops[0].Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    else:
+        cube_xform.AddTranslateOp().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+
+def detach_cube_from_hand(cube_name, hand_path):
+    index = int(cube_name[-1]) - 1  # Extract cube index from name (e.g., "cube1" → 0)
+
+    # Choose the correct bin position based on the direction
+    bin_y = bin2_ys[index] if direction_flag == 0 else bin1_ys[index]
+    drop_position = Gf.Vec3f(-1.12, bin_y, 1.27)
+
+    cube_full_path = f"{hand_path}/{cube_name}"
+    new_path = f"/World/Cube/{cube_name}"
+
+    # Move the cube back to /World/Cube
+    omni.kit.commands.execute(
+        "MovePrim",
+        path_from=cube_full_path,
+        path_to=new_path,
+    )
+
+    # Set its position to the bin drop position
+    moved_cube = stage.GetPrimAtPath(new_path)
+    cube_xform = UsdGeom.Xformable(moved_cube)
+    if cube_xform:
+        translate_ops = cube_xform.GetOrderedXformOps()
+        if translate_ops:
+            translate_ops[0].Set(drop_position)
+        else:
+            cube_xform.AddTranslateOp().Set(drop_position)
+
+
+def handle_actions(frame_now):
+    for frame, action, child_name, parent in list(action_queue):
+        if frame == frame_now:
+            if action == "attach":
+                attach_cube_to_hand(child_name, parent)
+            elif action == "detach":
+                detach_cube_from_hand(child_name, parent)
 
 i = 0
 delay = 0
