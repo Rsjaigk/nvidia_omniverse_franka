@@ -1,0 +1,8 @@
+string hand_name
+bool detected
+float64 distance_to_robot
+float64 y_diff
+string relative_position
+float32 risk_score
+float32 risk_trend
+string risk_level
