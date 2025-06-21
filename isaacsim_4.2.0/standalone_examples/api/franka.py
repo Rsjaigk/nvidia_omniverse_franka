@@ -62,7 +62,8 @@ if assets_root_path is None:
     sys.exit()
 
 BACKGROUND_STAGE_PATH = "/World/background"
-BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
+BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd"
+#BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
 
 FRANKA_STAGE_PATH = "/World/Franka"
 
