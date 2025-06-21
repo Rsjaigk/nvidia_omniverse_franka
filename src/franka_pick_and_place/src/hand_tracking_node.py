@@ -52,6 +52,12 @@ def camera_callback(msg):
         else:
             print("Robot not found")
 
+        cv2.imshow("Camera Feed", frame)
+
+        # Exit on 'q' press
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            rospy.signal_shutdown("User requested shutdown")
+
     except Exception as e:
         rospy.logwarn(f"Error in camera callback: {e}")
 
