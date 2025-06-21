@@ -66,6 +66,8 @@ BACKGROUND_STAGE_PATH = "/World/background"
 BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd"
 #BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
 #BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
+FORKLIFT1_USD_PATH = assets_root_path + "/Isaac/Props/Forklift/forklift.usd"
+FORKLIFT2_USD_PATH = assets_root_path + "/Isaac/Robots/Forklift/forklift_b.usd"
 
 FRANKA_STAGE_PATH = "/World/Franka"
 
@@ -339,6 +341,31 @@ hands3 = prims.create_prim(
     scale=(0.0003, 0.0003, 0.0003),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=HAND_PATH,
+)
+
+forklift1 = prims.create_prim(
+    "/World/Forklifts/forklift1",
+    "Xform",
+    position=np.array([-4.5, -3, 0]),
+    scale=np.array([1, 1, 1]),
+    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 180)),
+    usd_path=FORKLIFT1_USD_PATH,
+)
+
+forklift2 = prims.create_prim(
+    "/World/Forklifts/forklift2",
+    "Xform",    
+    position=np.array([4.5, 8, 0]),
+    scale=np.array([1, 1, 1]),
+    usd_path=FORKLIFT2_USD_PATH,
+)
+
+forklift3 = prims.create_prim(
+    "/World/Forklifts/forklift3",
+    "Xform",
+    position=np.array([4.5, 0, 0]),
+    scale=np.array([1, 1, 1]),
+    usd_path=FORKLIFT2_USD_PATH,
 )
 
 character1 = prims.create_prim(
@@ -724,4 +751,3 @@ while simulation_app.is_running():
                 delay = 0
 
 simulation_app.close() # close Isaac Sim
-
