@@ -62,8 +62,10 @@ if assets_root_path is None:
     sys.exit()
 
 BACKGROUND_STAGE_PATH = "/World/background"
-BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd"
 #BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd"
+BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse_multiple_shelves.usd"
+#BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
+#BACKGROUND_USD_PATH = "/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
 
 FRANKA_STAGE_PATH = "/World/Franka"
 
@@ -84,14 +86,14 @@ BIPED_SETUP_USD_PATH = assets_root_path + "/Isaac/People/Characters/Biped_Setup.
 HAND_PATH = "omniverse://localhost/custom_assets/humanhand.usd"
 CUBE_USD_PATH = "http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Props/Blocks/nvidia_cube.usd"
 
-viewports.set_camera_view(eye=np.array([5, 4.2, 4]), target=np.array([-50, 4, -15]))
+viewports.set_camera_view(eye=np.array([-0.7, 4, 3]), target=np.array([-30, 4, -15]))
 
 world = World()
 add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH)
 
 franka = world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH,
                                 name="franka",
-                                position=np.array([-1.92, 4.12, 1.163])))
+                                position=np.array([-3.92, 4.12, 1.163])))
 
 
 try:
@@ -147,8 +149,8 @@ simulation_app.update()
 
 camera_prim1 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera1", "Camera"))
 xform_api = UsdGeom.XformCommonAPI(camera_prim1)
-xform_api.SetTranslate(Gf.Vec3d(0, 4.1, 3))
-xform_api.SetRotate((26, -0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+xform_api.SetTranslate(Gf.Vec3d(-2, 4.1, 3))
+xform_api.SetRotate((35, -0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 camera_prim1.GetHorizontalApertureAttr().Set(36)     # mm
 camera_prim1.GetVerticalApertureAttr().Set(20.25)    # mm (for 16:9 aspect ratio)
 camera_prim1.GetProjectionAttr().Set("perspective")
@@ -159,7 +161,7 @@ camera_prim1.GetFocusDistanceAttr().Set(2500)        # mm (2.5 meters — adjust
 
 camera_prim2 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera2", "Camera"))
 xform_api = UsdGeom.XformCommonAPI(camera_prim2)
-xform_api.SetTranslate(Gf.Vec3d(-1.5, 7.7, 2.75))
+xform_api.SetTranslate(Gf.Vec3d(-3.5, 7.7, 2.75))
 xform_api.SetRotate((72, -0.0, 180), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 camera_prim2.GetHorizontalApertureAttr().Set(21)
 camera_prim2.GetVerticalApertureAttr().Set(16)
@@ -169,8 +171,8 @@ camera_prim2.GetFocusDistanceAttr().Set(400)
 
 camera_prim3 = UsdGeom.Camera(omni.usd.get_context().get_stage().DefinePrim("/World/camera3", "Camera"))
 xform_api = UsdGeom.XformCommonAPI(camera_prim3)
-xform_api.SetTranslate(Gf.Vec3d(9.4, -11.5, 6.3))
-xform_api.SetRotate((68.5, -0.0, 36), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+xform_api.SetTranslate(Gf.Vec3d(-0.5, -12, 7))
+xform_api.SetRotate((65, -0.0, 0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 camera_prim3.GetHorizontalApertureAttr().Set(21)
 camera_prim3.GetVerticalApertureAttr().Set(16)
 camera_prim3.GetProjectionAttr().Set("perspective")
@@ -180,7 +182,7 @@ camera_prim3.GetFocusDistanceAttr().Set(400)
 table = prims.create_prim(
     TABLE_STAGE_PATH,
     "Xform",
-    position=np.array([-1.461, 4.113, 0.00]),
+    position=np.array([-3.461, 4.113, 0.00]),
     scale=np.array([0.014, 0.013, 0.01522]),
     usd_path=TABLE_USD_PATH,
 )
@@ -194,7 +196,7 @@ utils.setRigidBody(table_prim, "convexDecomposition", False)
 left_bin = prims.create_prim(
     "/World/Bins/binleft",
     "Xform",
-    position=np.array([-1.64, 3.6, 1.22]),
+    position=np.array([-3.64, 3.6, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
@@ -202,7 +204,7 @@ left_bin = prims.create_prim(
 middle_bin = prims.create_prim(
     "/World/Bins/binmiddle",
     "Xform",
-    position=np.array([-1.180, 4.13, 1.22]),
+    position=np.array([-3.180, 4.13, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
@@ -210,7 +212,7 @@ middle_bin = prims.create_prim(
 right_bin = prims.create_prim(
     "/World/Bins/binright",
     "Xform",
-    position=np.array([-1.65, 4.6, 1.22]),
+    position=np.array([-3.65, 4.6, 1.22]),
     scale=np.array([2, 2, 0.8]),
     usd_path=BIN_USD_PATH,
 )
@@ -219,7 +221,7 @@ right_bin = prims.create_prim(
 left_bin_human = prims.create_prim(
     "/World/Bins/binlefthuman",
     "Xform",
-    position=np.array([-1.12, 3.52, 1.22]),
+    position=np.array([-3.12, 3.52, 1.22]),
     scale=np.array([1.5, 1.5, 0.8]),
     usd_path=BIN_USD_PATH,
 )
@@ -227,7 +229,7 @@ left_bin_human = prims.create_prim(
 right_bin_human = prims.create_prim(
     "/World/Bins/binrighthuman",
     "Xform",
-    position=np.array([-1.12, 4.73, 1.22]),
+    position=np.array([-3.12, 4.73, 1.22]),
     scale=np.array([1.5, 1.5, 0.8]),
     usd_path=BIN_USD_PATH,
 )
@@ -235,7 +237,7 @@ right_bin_human = prims.create_prim(
 orange1 = prims.create_prim(
     "/World/Fruits/orange1",
     "Xform",
-    position=np.array([-1.722, 3.69, 1.19]),
+    position=np.array([-3.722, 3.69, 1.19]),
     scale=np.array([0.008, 0.008, 0.008]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=ORANGE_USD_PATH,
@@ -244,7 +246,7 @@ orange1 = prims.create_prim(
 orange2 = prims.create_prim(
     "/World/Fruits/orange2",
     "Xform",
-    position=np.array([-1.722, 3.506, 1.19]),
+    position=np.array([-3.722, 3.506, 1.19]),
     scale=np.array([0.008, 0.008, 0.008]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=ORANGE_USD_PATH,
@@ -253,7 +255,7 @@ orange2 = prims.create_prim(
 orange3 = prims.create_prim(
     "/World/Fruits/orange3",
     "Xform",
-    position=np.array([-1.60, 3.60, 1.19]),
+    position=np.array([-3.60, 3.60, 1.19]),
     scale=np.array([0.008, 0.008, 0.008]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=ORANGE_USD_PATH,
@@ -262,7 +264,7 @@ orange3 = prims.create_prim(
 pomegranate1 = prims.create_prim(
     "/World/Fruits/pomegranate1",
     "Xform",
-    position=np.array([-1.70, 4.514, 1.18]),
+    position=np.array([-3.70, 4.514, 1.18]),
     scale=np.array([0.005, 0.005, 0.005]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
     usd_path=POMEGRENATE_USD_PATH,
@@ -271,7 +273,7 @@ pomegranate1 = prims.create_prim(
 pomegranate2 = prims.create_prim(
     "/World/Fruits/pomegranate2",
     "Xform",
-    position=np.array([-1.70, 4.684, 1.18]),
+    position=np.array([-3.70, 4.684, 1.18]),
     scale=np.array([0.005, 0.005, 0.005]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 60)),
     usd_path=POMEGRENATE_USD_PATH,
@@ -280,7 +282,7 @@ pomegranate2 = prims.create_prim(
 pomegranate3 = prims.create_prim(
     "/World/Fruits/pomegranate3",
     "Xform",
-    position=np.array([-1.58, 4.603, 1.18]),
+    position=np.array([-3.58, 4.603, 1.18]),
     scale=np.array([0.005, 0.005, 0.005]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 0), 90)),
     usd_path=POMEGRENATE_USD_PATH,
@@ -290,7 +292,7 @@ pomegranate3 = prims.create_prim(
 cube_1 = prims.create_prim(
         "/World/Cube/cube1",
         "Xform",
-        position=np.array([-1.12, 3.41, 1.19]),
+        position=np.array([-3.12, 3.41, 1.19]),
         scale=np.array([0.8, 0.8, 0.8]),
         usd_path=CUBE_USD_PATH,
     )
@@ -298,14 +300,14 @@ cube_1 = prims.create_prim(
 cube_2 = prims.create_prim(
         "/World/Cube/cube2",
         "Xform",
-        position=np.array([-1.12, 3.51, 1.19]),
+        position=np.array([-3.12, 3.51, 1.19]),
         scale=np.array([0.8, 0.8, 0.8]),
         usd_path=CUBE_USD_PATH,
     )
 cube_3 = prims.create_prim(
         "/World/Cube/cube3",
         "Xform",
-        position=np.array([-1.12, 3.61, 1.19]),
+        position=np.array([-3.12, 3.61, 1.19]),
         scale=np.array([0.8, 0.8, 0.8]),
         usd_path = CUBE_USD_PATH,
     )
@@ -313,7 +315,7 @@ cube_3 = prims.create_prim(
 hands1 = prims.create_prim(
     "/World/Hand/Hand1",
     "Xform",
-    position=(-0.5, 0.7, 1.5),
+    position=(-2.5, 0.7, 1.5),
     scale=(0.0003, 0.0003, 0.0003),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=HAND_PATH,
@@ -323,7 +325,7 @@ hands1 = prims.create_prim(
 hands2 = prims.create_prim(
     "/World/Hand/Hand2",
     "Xform",
-    position=(1, 4.5, 1.2),
+    position=(-1, 4.5, 1.2),
     scale=(0.0003, 0.0003, 0.0003),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=HAND_PATH,
@@ -333,7 +335,7 @@ hands2 = prims.create_prim(
 hands3 = prims.create_prim(
     "/World/Hand/Hand3",
     "Xform",
-    position=(-0.3, 7.3, 1.8),
+    position=(-2.3, 7.3, 1.8),
     scale=(0.0003, 0.0003, 0.0003),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90)),
     usd_path=HAND_PATH,
@@ -387,7 +389,7 @@ character5 = prims.create_prim(
 character6 = prims.create_prim(
     "/World/Characters/character6",
     "Xform",
-    position=np.array([8.186, -5.37, 0.00]),
+    position=np.array([3, -5.37, 0.00]),
     scale=np.array([1, 1, 1]),
     orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 180)),
     usd_path=POLICE_USD_PATH,
@@ -451,7 +453,7 @@ franka_home = franka.get_joint_positions()
 initial_velocities = franka.get_joint_velocities()
 #print(franka_home)
 
-goal_positions = [np.array([-1.187, 4.15, 1.1897]), np.array([-1.187, 4.03, 1.1897]), np.array([-1.187, 4.27, 1.1897])]
+goal_positions = [np.array([-3.187, 4.15, 1.1897]), np.array([-3.187, 4.03, 1.1897]), np.array([-3.187, 4.27, 1.1897])]
 
 selected_objects = random.sample(objects, 3)  
 task = list(zip(selected_objects, goal_positions))
@@ -463,16 +465,16 @@ prim_paths = ["/World/Cube/cube1", "/World/Cube/cube2", "/World/Cube/cube3"]
 initial_pos_cube = {f"cube{i+1}": get_prim_position(stage, path) for i, path in enumerate(prim_paths[:3])}
 
 final_pos_cube = {
-    "cube1": np.array([-1.12, 4.63, 1.19]),
-    "cube2": np.array([-1.12, 4.73, 1.19]),
-    "cube3": np.array([-1.12, 4.83, 1.19]),
+    "cube1": np.array([-3.12, 4.63, 1.19]),
+    "cube2": np.array([-3.12, 4.73, 1.19]),
+    "cube3": np.array([-3.12, 4.83, 1.19]),
 }
 
 hand_paths = ["/World/Hand/Hand1", "/World/Hand/Hand2", "/World/Hand/Hand3"]
 hand_positions = [get_prim_position(stage, path) for path in hand_paths]   
 
 
-start_x = end_x = -1.12
+start_x = end_x = -3.12
 start_z = 1.19
 hover_z = 1.4
 grip_z = 1.27
@@ -521,7 +523,7 @@ def detach_cube_from_hand(cube_name, hand_path):
 
     # Choose the correct bin position based on the direction
     bin_y = bin2_ys[index] if direction_flag == 0 else bin1_ys[index]
-    drop_position = Gf.Vec3f(-1.12, bin_y, 1.27)
+    drop_position = Gf.Vec3f(-3.12, bin_y, 1.27)
 
     cube_full_path = f"{hand_path}/{cube_name}"
     new_path = f"/World/Cube/{cube_name}"
@@ -722,3 +724,4 @@ while simulation_app.is_running():
                 delay = 0
 
 simulation_app.close() # close Isaac Sim
+
