@@ -1,5 +1,7 @@
 import rospy
 import tf2_ros
+import os
+import time
 from geometry_msgs.msg import Pose
 from cv_bridge import CvBridge
 import cv2
@@ -15,6 +17,12 @@ hand_objects = ["Hand1", "Hand2", "Hand3"]
 robot = "panda_link8"
 
 hand_status_pub = rospy.Publisher("/hand_status", HandStatus, queue_size=10)
+
+# Create a directory for graph snapshots
+snapshot_dir = "graph_snapshots"
+os.makedirs(snapshot_dir, exist_ok=True)
+
+snapshot_counter = 0 
 
 # Store latest pose messages from topics
 hand_poses = {}
@@ -321,6 +329,8 @@ def display_graph_opencv(graph):
     """ Display the hand graph using OpenCV and Matplotlib.
     This function uses a fixed layout for the robot and hand nodes.
     """
+    global snapshot_counter
+
     fig = Figure(figsize=(8, 6))
     canvas = FigureCanvas(fig)
     ax = fig.add_subplot(111)
@@ -397,6 +407,12 @@ def display_graph_opencv(graph):
     canvas.draw()
     buf = np.asarray(canvas.buffer_rgba())
     image_bgr = cv2.cvtColor(buf, cv2.COLOR_RGBA2BGR)
+
+    # === Save image to file ===
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    filename = f"{snapshot_dir}/graph_{snapshot_counter:04d}_{timestamp}.png"
+    cv2.imwrite(filename, image_bgr)
+    snapshot_counter += 1
 
     # Show image
     cv2.imshow("Hand Graph", image_bgr)
