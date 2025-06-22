@@ -6,6 +6,9 @@ import cv2
 from sensor_msgs.msg import Image
 import mediapipe as mp
 import numpy as np
+import networkx as nx
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
 from franka_pick_and_place.msg import HandStatus  
 
 hand_objects = ["Hand1", "Hand2", "Hand3"]
@@ -25,6 +28,27 @@ hand_bounds = {
     "y": (2.5, 5.5),
     "z": (0.8, 1.6)
 }
+
+hand_graph = nx.Graph()
+
+fixed_positions = {
+    "robot": [0, 1],        # Top center
+    "left": [2, -1],       # Bottom left
+    "center": [0, -1],      # Bottom center
+    "right": [-2, -1],       # Bottom right
+}
+
+fixed_nodes = list(fixed_positions.keys())
+
+node_thresholds = {
+    "left": 0.2,
+    "right": 0.2,
+    "center": 0.6
+}
+
+for node, threshold in node_thresholds.items():
+    hand_graph.add_node(node)
+    hand_graph.add_edge("robot", node, distance=threshold)
 
 # OpenCV Bridge
 bridge = CvBridge()
@@ -171,6 +195,213 @@ def assess_hand_risk(hand_name, robot_pos, hand_pose, velocity, time_to_stop, d_
         "status": collision_status
     }
 
+def probabilistic_or(risks):
+    """
+    Compute probabilistic OR of a list of risk values.
+    R = 1 - product(1 - Ri)
+    """
+    product = 1.0
+    for r in risks:
+        product *= (1 - r)
+    return 1 - product
+
+def compute_region_risks(graph):
+    """
+    For each region node (left, center, right), combine the risks of all hands connected
+    to that region using probabilistic OR.
+    
+    Returns a dict: {region: risk_value}
+    """
+    region_risks = {}
+    for region in ["left", "center", "right"]:
+        # Collect all risk values of hands connected to this region
+        hand_risks = []
+        for neighbor in graph.neighbors(region):
+            # Skip if neighbor is robot or another region node
+            if neighbor in ["robot", "left", "center", "right"]:
+                continue
+            edge_data = graph.get_edge_data(region, neighbor)
+            if edge_data and "risk_value" in edge_data:
+                hand_risks.append(edge_data["risk_value"])
+        
+        if hand_risks:
+            region_risks[region] = probabilistic_or(hand_risks)
+        else:
+            region_risks[region] = 0.0
+
+    return region_risks
+
+
+def compute_robot_risk(region_risks, priorities, graph):
+    """
+    Compute overall robot risk:
+    - Determine the critical region using weighted region risk
+    - In that region, find the hand with the highest raw risk
+    - Return: robot_risk (float), critical_region (str), critical_hand (str), critical_hand_risk (float)
+    """
+    # Step 1: Compute total weight
+    total_weight = sum(priorities.values())
+    if total_weight == 0:
+        return 0.0, None, None, 0.0
+
+    # Step 2: Compute weighted risks
+    weighted_risks = {r: priorities[r] * region_risks.get(r, 0.0) for r in priorities}
+    total_weighted_risk = sum(weighted_risks.values())
+
+    if total_weighted_risk == 0:
+        return 0.0, None, None, 0.0
+
+    # Step 3: Identify critical region (region with highest weighted risk)
+    critical_region = max(weighted_risks, key=weighted_risks.get)
+    robot_risk = weighted_risks[critical_region] / total_weight  # Or just max, depending on semantics
+
+    # Step 4: Find critical hand in that region (with max raw risk)
+    max_risk = 0.0
+    critical_hand = None
+    for neighbor in graph.neighbors(critical_region):
+        if neighbor in ["robot", "left", "center", "right"]:
+            continue
+        edge_data = graph.get_edge_data(critical_region, neighbor)
+        if edge_data and "risk_value" in edge_data:
+            if edge_data["risk_value"] > max_risk:
+                max_risk = edge_data["risk_value"]
+                critical_hand = neighbor
+
+    return robot_risk, critical_region, critical_hand, max_risk
+
+def remove_hand_from_graph(hand_name):
+    #Remove a hand from the graph and ensure its full removal.
+    if hand_name in hand_graph.nodes:
+        # Log before removal
+        print(f"Removing {hand_name} from graph")
+        
+        # Remove edges connected to the hand node
+        neighbors = list(hand_graph.neighbors(hand_name))
+        for neighbor in neighbors:
+            hand_graph.remove_edge(neighbor, hand_name)
+        # Remove the node itself
+        hand_graph.remove_node(hand_name)
+        
+        # Log after removal
+        print(f"Removed {hand_name} from graph")
+    else:
+        print(f"{hand_name} not found in graph")
+
+def add_hand_to_graph(hand_name, hand_pose, rel_pos, dist_to_robot, risk_score, collision_status):
+    # Add or update a hand in the graph. 
+    robot_pos = get_object_pose_tf(robot)
+    if robot_pos:
+        # Remove the hand if it already exists
+        if hand_name in hand_graph.nodes:
+            neighbors = list(hand_graph.neighbors(hand_name))
+            for neighbor in neighbors:
+                hand_graph.remove_edge(neighbor, hand_name)
+            hand_graph.remove_node(hand_name)
+            print(f"Removed existing {hand_name} before adding new one.")
+            #time.sleep(0.5)  # Ensure removal is complete
+        
+        # Add new hand node
+        hand_graph.add_node(hand_name, pos=(hand_pose.position.x, hand_pose.position.y))
+        hand_graph.add_edge(
+            rel_pos,
+            hand_name,
+            distance=dist_to_robot,
+            risk_value=risk_score,
+            risk_level=collision_status
+        )
+
+        #hand_graph.add_edge(rel_pos, hand_name, distance=dist_to_robot)
+        print(f"Added {hand_name} under {rel_pos} with distance {dist_to_robot:.2f}")
+    else:
+        print(f"Robot not found for {hand_name}")
+
+
+# Graph display function
+def display_graph_opencv(graph):
+    """ Display the hand graph using OpenCV and Matplotlib.
+    This function uses a fixed layout for the robot and hand nodes.
+    """
+    fig = Figure(figsize=(8, 6))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
+    # Spring layout with fixed base node positions
+    pos = nx.spring_layout(graph, pos=fixed_positions, fixed=fixed_nodes, k=1)
+
+    # Draw graph
+    nx.draw(
+        graph,
+        pos,
+        with_labels=True,
+        node_size=1000,
+        node_color="lightblue",
+        font_size=10,
+        font_weight="bold",
+        ax=ax
+    )
+
+    # Draw edge labels
+    edge_labels = {}
+    for u, v, data in graph.edges(data=True):
+        if {u, v} <= {"robot", "left", "right", "center"}:
+            dist = data.get("distance", 0.0)
+
+
+            region_node = v if u == "robot" else u
+            or_risk = graph.nodes.get(region_node, {}).get("or_risk", None)
+            if or_risk is not None:
+                edge_labels[(u, v)] = f"{dist:.2f} | RISK: {or_risk:.2f}"
+            else:
+                edge_labels[(u, v)] = f"{dist:.2f} | RISK: N/A"
+        else:
+            dist = data.get("distance", 0.0)
+            risk_val = data.get("risk_value", 0.0)
+            risk_lvl = data.get("risk_level", "N/A")
+            edge_labels[(u, v)] = f"{dist:.2f} | {risk_val:.2f} | {risk_lvl.upper()}"
+
+    nx.draw_networkx_edge_labels(
+        graph,
+        pos,
+        edge_labels=edge_labels,
+        ax=ax,
+        font_size=8,
+        font_color='black',
+        label_pos=0.5,
+        rotate=False,
+        bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2')
+    )
+
+    # Annotate robot node with full risk summary
+    for node, (x, y) in pos.items():
+        if node == "robot":
+            critical_region = graph.nodes[node].get("critical_region", "N/A")
+            critical_hand = graph.nodes[node].get("critical_hand", "N/A")
+            critical_hand_risk = graph.nodes[node].get("critical_hand_risk", None)
+
+            label_lines = []
+            if critical_region and critical_region in graph.nodes:
+                region_to_robot_risk = graph.nodes[critical_region].get("or_risk", None)
+                if region_to_robot_risk is not None:
+                    label_lines.append(f"Robot Risk: {region_to_robot_risk:.2f}")
+
+            label_lines.append(f"Critical Region: {critical_region}")
+            label_lines.append(f"Critical Hand: {critical_hand}")
+            if critical_hand_risk is not None:
+                label_lines.append(f"Hand Risk: {critical_hand_risk:.2f}")
+
+            for i, line in enumerate(label_lines):
+                ax.text(x, y + 0.15 + i * 0.1, line, fontsize=8, ha='center', color='darkred')
+
+
+    # Convert to OpenCV image
+    canvas.draw()
+    buf = np.asarray(canvas.buffer_rgba())
+    image_bgr = cv2.cvtColor(buf, cv2.COLOR_RGBA2BGR)
+
+    # Show image
+    cv2.imshow("Hand Graph", image_bgr)
+    cv2.waitKey(1)
+
 def camera_callback(msg):
 
     global mediapipe_to_world_map
@@ -234,7 +465,9 @@ def camera_callback(msg):
                             print(f"[{matched_hand}] Risk score: {result['risk']:.3f}")
                             print(f"[{matched_hand}] ➤ RISK LEVEL = {result['status'].upper()}")
 
-                             # Publish hand status
+                            add_hand_to_graph(matched_hand, hand_poses[matched_hand], result['rel_pos'], result['dist'], result['risk'], result['status'])
+
+                            # Publish hand status
                             hand_status = HandStatus()
                             hand_status.hand_name = matched_hand
                             hand_status.detected = True
@@ -253,7 +486,41 @@ def camera_callback(msg):
             mediapipe_to_world_map = {}
             cv2.putText(frame, "No hands detected", (50, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            
+        
+        # Remove hands not detected this frame from graph
+        for hand_name in list(hand_graph.nodes):
+            if hand_name not in used_world_hands and hand_name not in ["robot", "left", "right", "center"]:
+                remove_hand_from_graph(hand_name)
+
+        # Compute region risks and update graph nodes
+        region_risks = compute_region_risks(hand_graph)
+        for region, risk in region_risks.items():
+            if region in hand_graph.nodes:
+                hand_graph.nodes[region]['or_risk'] = round(risk, 3)
+
+        robot_risk, critical_region, critical_hand, critical_hand_risk = compute_robot_risk(region_risks, node_thresholds, hand_graph)
+
+        # Update robot node
+        if "robot" in hand_graph.nodes:
+            hand_graph.nodes["robot"]["weighted_risk"] = round(robot_risk, 3)
+            hand_graph.nodes["robot"]["critical_region"] = critical_region
+            hand_graph.nodes["robot"]["critical_hand"] = critical_hand
+            hand_graph.nodes["robot"]["critical_hand_risk"] = round(critical_hand_risk, 3)
+
+        # Print final report
+        print(f"\nRobot overall risk: {robot_risk:.2f}")
+        print(f"Critical region: {critical_region}")
+        print(f"Critical hand: {critical_hand} | Raw risk: {critical_hand_risk:.2f}\n")
+
+        # Display graph and camera feed
+        display_graph_opencv(hand_graph)
+
+        if critical_region and critical_hand:
+            cv2.putText(frame, f"Critical Region: {critical_region}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (102, 51, 0), 2)
+            cv2.putText(frame, f"Critical Hand: {critical_hand} | Risk: {critical_hand_risk:.2f}", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (102, 51, 0), 2)
+        
         cv2.imshow("Camera Feed", frame)
 
         # Exit on 'q' press
