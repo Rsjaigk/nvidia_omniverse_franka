@@ -6,9 +6,12 @@ import cv2
 from sensor_msgs.msg import Image
 import mediapipe as mp
 import numpy as np
+from franka_pick_and_place.msg import HandStatus  
 
 hand_objects = ["Hand1", "Hand2", "Hand3"]
 robot = "panda_link8"
+
+hand_status_pub = rospy.Publisher("/hand_status", HandStatus, queue_size=10)
 
 # Store latest pose messages from topics
 hand_poses = {}
@@ -231,6 +234,15 @@ def camera_callback(msg):
                             print(f"[{matched_hand}] Risk score: {result['risk']:.3f}")
                             print(f"[{matched_hand}] ➤ RISK LEVEL = {result['status'].upper()}")
 
+                             # Publish hand status
+                            hand_status = HandStatus()
+                            hand_status.hand_name = matched_hand
+                            hand_status.detected = True
+                            hand_status.distance_to_robot = result['dist']
+                            hand_status.relative_position = result['rel_pos']
+                            hand_status.y_diff = result['y_diff']
+                            hand_status.risk_level = result['status']
+                            hand_status_pub.publish(hand_status)
                     else:
                         print(f"MediaPipe hand {i} could not be matched (out of bounds or no pose).")
 
