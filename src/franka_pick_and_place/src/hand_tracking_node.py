@@ -73,7 +73,6 @@ Category 1: Controlled stop with power maintained. 0.735s
 
 Category 2: Controlled stop with power removed after stop. 0.743s
 
-
 dmin=v⋅Tstop≤dreach=0.855m
 
 Using the worst-case stop time (Category 2, Axis 1):
@@ -95,11 +94,9 @@ def match_to_closest_hand(detected_pose, known_poses):
     """
     Match detected hand pose to the closest known hand pose based on Euclidean distance.
     Returns the name of the closest hand or None if no known poses are close enough.
-
     Args:
         detected_pose (Pose): The detected hand pose.
         known_poses (dict): Dictionary of known hand poses with names as keys and Pose objects as values.
-
     Returns:
         str: The name of the closest hand or None if no match found.
     """
@@ -122,10 +119,8 @@ def match_to_closest_hand(detected_pose, known_poses):
 
 def get_wrist_pose_from_landmarks(hand_landmarks):
     """Extract the wrist pose from MediaPipe hand landmarks.
-
     Args:
         hand_landmarks: MediaPipe hand landmarks object.
-
     Returns:
         Pose: A Pose object containing the wrist position.
     """
@@ -141,11 +136,9 @@ def hand_pose_callback(msg, hand_name):
     """
     Callback function for hand pose messages.
     Updates the global hand_poses dictionary with the latest pose for the specified hand.
-
     Args:
         msg (Pose): The Pose message containing the hand's position and orientation.
         hand_name (str): The name of the hand (e.g., "Hand1", "Hand2", "Hand3").
-
     Returns:
         None
     """
@@ -155,10 +148,8 @@ def hand_pose_callback(msg, hand_name):
 def get_object_pose_tf(object_name):
     """
     Get the pose of an object in the "world" frame using TF.
-
     Args:
         object_name (str): The name of the object to look up in TF.
-
     Returns:
         Pose: The pose of the object in the "world" frame, or None if not found.
     """
@@ -184,11 +175,9 @@ def get_object_pose_tf(object_name):
 def calculate_euclidean_distance(pose1, pose2):
     """
     Calculate the Euclidean distance between two Pose objects.
-
     Args:
         pose1 (Pose): The first Pose object.
         pose2 (Pose): The second Pose object.
-
     Returns:
         float: The Euclidean distance between the two poses, rounded to 2 decimal places.
     """
@@ -203,14 +192,12 @@ def calculate_euclidean_distance(pose1, pose2):
 def compute_risk_score(distance, velocity, time_to_stop, d_reach, alpha):
     """
     Compute distance-based hazard (risk) score based on ISO/TS 15066.
-
     Args:
         distance (float): Current distance between human and robot (d_H)
         velocity (float): Robot's velocity (m/s)
         time_to_stop (float): Time required to stop robot (s)
         d_reach (float): Robot's maximum physical reach (m)
         alpha (float): Sensitivity coefficient for exponential decay
-
     Returns:
         float: Risk score (0 to 1)
     """
@@ -233,7 +220,6 @@ def assess_hand_risk(
 ):
     """
     Assess the risk of collision between a hand and the robot.
-
     Args:
         hand_name (str): Name of the hand (e.g., "Hand1").
         robot_pos (Pose): Pose of the robot in the "world" frame.
@@ -242,7 +228,6 @@ def assess_hand_risk(
         time_to_stop (float): Time required to stop robot (s).
         d_reach (float): Robot's maximum physical reach (m).
         alpha (float): Sensitivity coefficient for exponential decay.
-
     Returns:
         dict: A dictionary containing relative position, y-difference, distance,
               risk score, and collision status.
@@ -283,10 +268,8 @@ def probabilistic_or(risks):
     Compute probabilistic OR of a list of risk values.
     R = 1 - product(1 - Ri)
     where Ri is the risk value of each hand.
-
     Args:
         risks (list): List of risk values (0 to 1).
-
     Returns:
         float: Combined risk value using probabilistic OR.
         The result is a float between 0 and 1.
@@ -301,7 +284,6 @@ def compute_region_risks(graph):
     """
     For each region node (left, center, right), combine the risks of all hands connected
     to that region using probabilistic OR.
-
     Args:
         graph (nx.Graph): The hand graph containing region nodes and hand edges.
     Returns:
@@ -360,7 +342,7 @@ def compute_robot_risk(region_risks, priorities, graph):
     critical_region = max(weighted_risks, key=weighted_risks.get)
     robot_risk = (
         weighted_risks[critical_region] / total_weight
-    )  # Or just max, depending on semantics
+    )
 
     # Step 4: Find critical hand in that region (with max raw risk)
     max_risk = 0.0
@@ -378,9 +360,14 @@ def compute_robot_risk(region_risks, priorities, graph):
 
 
 def remove_hand_from_graph(hand_name):
-    # Remove a hand from the graph and ensure its full removal.
+    """
+    Remove a hand from the graph, including all edges connected to it.
+    Args:
+        hand_name (str): The name of the hand to remove.
+    Returns:
+        None
+    """
     if hand_name in hand_graph.nodes:
-        # Log before removal
         print(f"Removing {hand_name} from graph")
 
         # Remove edges connected to the hand node
@@ -390,7 +377,6 @@ def remove_hand_from_graph(hand_name):
         # Remove the node itself
         hand_graph.remove_node(hand_name)
 
-        # Log after removal
         print(f"Removed {hand_name} from graph")
     else:
         print(f"{hand_name} not found in graph")
@@ -399,7 +385,18 @@ def remove_hand_from_graph(hand_name):
 def add_hand_to_graph(
     hand_name, hand_pose, rel_pos, dist_to_robot, risk_score, collision_status
 ):
-    # Add or update a hand in the graph.
+    """
+    Add a hand to the graph with its relative position and risk score.
+    Args:
+        hand_name (str): The name of the hand to add.
+        hand_pose (Pose): The Pose of the hand in the "world" frame.
+        rel_pos (str): Relative position of the hand ("left", "right", "center").
+        dist_to_robot (float): Distance from the hand to the robot.
+        risk_score (float): Risk score for this hand.
+        collision_status (str): Collision status ("LOW", "MEDIUM", "HIGH").
+    Returns:
+        None
+    """
     robot_pos = get_object_pose_tf(robot)
     if robot_pos:
         # Remove the hand if it already exists
@@ -409,8 +406,7 @@ def add_hand_to_graph(
                 hand_graph.remove_edge(neighbor, hand_name)
             hand_graph.remove_node(hand_name)
             print(f"Removed existing {hand_name} before adding new one.")
-            # time.sleep(0.5)  # Ensure removal is complete
-
+            
         # Add new hand node
         hand_graph.add_node(hand_name, pos=(hand_pose.position.x, hand_pose.position.y))
         hand_graph.add_edge(
@@ -420,8 +416,6 @@ def add_hand_to_graph(
             risk_value=risk_score,
             risk_level=collision_status,
         )
-
-        # hand_graph.add_edge(rel_pos, hand_name, distance=dist_to_robot)
         print(f"Added {hand_name} under {rel_pos} with distance {dist_to_robot:.2f}")
     else:
         print(f"Robot not found for {hand_name}")
@@ -432,7 +426,6 @@ def display_graph_opencv(graph):
     """Display the hand graph using OpenCV and Matplotlib.
     Args:
         graph (nx.Graph): The hand graph to display.
-
     Returns:
         None
     """
