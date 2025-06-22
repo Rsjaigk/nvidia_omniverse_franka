@@ -4,12 +4,24 @@ from geometry_msgs.msg import Pose
 from cv_bridge import CvBridge
 import cv2
 from sensor_msgs.msg import Image
+import mediapipe as mp
+import numpy as np
 
-hand_objects = ["hand1", "hand2", "hand3"]
+hand_objects = ["Hand1", "Hand2", "Hand3"]
 robot = "panda_link8"
 
 # Store latest pose messages from topics
 hand_poses = {}
+
+# Map MediaPipe hand index to world hand name
+mediapipe_to_world_map = {}
+
+# Hand detection bounds
+hand_bounds = {
+    "x": (-3.4, -2.2),
+    "y": (2.5, 5.5),
+    "z": (0.8, 1.6)
+}
 
 # OpenCV Bridge
 bridge = CvBridge()
@@ -17,6 +29,41 @@ bridge = CvBridge()
 # TF Buffer and Listener (to be initialized after init_node)
 tf_buffer = None
 listener = None
+
+# MediaPipe setup
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    model_complexity=1,
+    static_image_mode=False,
+    max_num_hands=5,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+mp_draw = mp.solutions.drawing_utils
+
+def match_to_closest_hand(detected_pose, known_poses):
+    # Match detected pose to closest known pose (world hands). 
+    closest_hand = None
+    min_dist = float('inf')
+    for name, pose in known_poses.items():
+        dist = np.linalg.norm([
+            pose.position.x - detected_pose.position.x,
+            pose.position.y - detected_pose.position.y,
+            pose.position.z - detected_pose.position.z
+        ])
+        if dist < min_dist:
+            min_dist = dist
+            closest_hand = name
+    return closest_hand
+
+def get_wrist_pose_from_landmarks(hand_landmarks):
+    # Approximate wrist 3D pose from normalized image coordinates. 
+    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
+    pose = Pose()
+    pose.position.x = wrist.x
+    pose.position.y = wrist.y
+    pose.position.z = wrist.z
+    return pose
 
 def hand_pose_callback(msg, hand_name):
     hand_poses[hand_name] = msg
@@ -35,9 +82,17 @@ def get_object_pose_tf(object_name):
         return None
 
 def camera_callback(msg):
+
+    global mediapipe_to_world_map
+    current_frame_map = {}
+    used_world_hands = set()
+
     try:
         frame = bridge.imgmsg_to_cv2(msg, "bgr8")
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Process with MediaPipe
+        results = hands.process(image_rgb)
 
         for hand in hand_objects:
             if hand in hand_poses:
@@ -52,6 +107,45 @@ def camera_callback(msg):
         else:
             print("Robot not found")
 
+        h, w, _ = frame.shape
+
+        if results.multi_hand_landmarks:
+
+            for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    # Draw landmarks on frame
+                    mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                    for lm in hand_landmarks.landmark:
+                        cx, cy = int(lm.x * w), int(lm.y * h)
+                        cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
+
+                    # Estimate 3D wrist pose approx
+                    mp_pose = get_wrist_pose_from_landmarks(hand_landmarks)
+
+                    # Filter available hands (not used and inside bounds)
+                    available_hands = {
+                        name: pose for name, pose in hand_poses.items()
+                        if name not in used_world_hands and
+                        hand_bounds["x"][0] <= pose.position.x <= hand_bounds["x"][1] and
+                        hand_bounds["y"][0] <= pose.position.y <= hand_bounds["y"][1] and
+                        hand_bounds["z"][0] <= pose.position.z <= hand_bounds["z"][1]
+                    }
+
+                    matched_hand = match_to_closest_hand(mp_pose, available_hands)
+                    if matched_hand:
+                        print(f"MediaPipe hand {i} matched to world hand: {matched_hand}")
+                        current_frame_map[i] = matched_hand
+                        used_world_hands.add(matched_hand)
+                    else:
+                        print(f"MediaPipe hand {i} could not be matched (out of bounds or no pose).")
+
+            # Update global mapping
+            mediapipe_to_world_map = current_frame_map
+        else:
+             # No hands detected
+            mediapipe_to_world_map = {}
+            cv2.putText(frame, "No hands detected", (50, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
         cv2.imshow("Camera Feed", frame)
 
         # Exit on 'q' press
@@ -71,7 +165,7 @@ def main():
     rospy.Subscriber("/rgb", Image, camera_callback)
 
     for hand in hand_objects:
-        rospy.Subscriber(f"/{hand}/pose", Pose, lambda msg, h=hand: hand_pose_callback(msg, h))
+        rospy.Subscriber(f"/{hand.lower()}/pose", Pose, lambda msg, h=hand: hand_pose_callback(msg, h))
 
     rospy.loginfo("Hand tracking node running...")
     rospy.spin()
