@@ -1,0 +1,13 @@
+cv_bridge==1.16.2
+matplotlib==3.7.5
+matplotlib==3.1.2
+mediapipe==0.10.11
+networkx==3.1
+numpy==1.21.0
+numpy==1.24.4
+numpy==1.17.4
+opencv_contrib_python==4.11.0.86
+opencv_python==4.11.0.86
+rospy==1.17.4
+sensor_msgs==1.13.2
+tf2_ros==0.7.10
