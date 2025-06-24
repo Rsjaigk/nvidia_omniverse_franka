@@ -915,8 +915,6 @@ while simulation_app.is_running():
                 print(f"Invalid prim path for hand {hand_index+1}")
 
         current_joint_positions = franka.get_joint_positions()
-        franka_velocities = franka.get_joint_velocities()
-        print(franka_velocities)
         obj, goal_pos = task[i]
         picking_position = get_prim_position(world.stage, obj.GetPath())
         if obj in [pomegranate1, pomegranate2, pomegranate3]:
