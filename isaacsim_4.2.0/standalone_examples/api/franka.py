@@ -643,7 +643,7 @@ grip_z = 1.27
 bin1_ys = [3.41, 3.51, 3.61]
 bin2_ys = [4.63, 4.73, 4.83]
 
-speed_factor = 5
+speed_factor = 6
 cycle_gap = 120 * speed_factor
 cycle_duration = 1.5 * cycle_gap
 frame_offset = 0
@@ -788,7 +788,7 @@ def animate_hands_cubes(index, direction, offset):
     f_drop = f0 + 50 * speed_factor
     f_detach = f0 + 51 * speed_factor
     f_lift_after_drop = f0 + 60 * speed_factor
-    f_return = f0 + 80 * speed_factor
+    f_return = f0 + 90 * speed_factor
 
     hand_translate.GetAttr().Set(Gf.Vec3f(hand_home_x, hand_home_y, home_z), time=f0)
     hand_translate.GetAttr().Set(Gf.Vec3f(start_x, from_y, hover_z), time=f_above)
@@ -859,10 +859,50 @@ def reset_cubes_to_initial_positions():
                 )
 
 
+def is_hand_too_close(threshold):
+    """
+    Check if any hand is too close to the end-effector of the Franka robot.
+    Args:
+        threshold (float): The distance threshold to check against.
+    Returns:
+        bool: True if any hand is too close, False otherwise.
+    """
+    ee_prim_path = "/World/Franka/panda_hand"
+    ee_prim = stage.GetPrimAtPath(ee_prim_path)
+
+    if not ee_prim.IsValid():
+        print(
+            f"[ERROR] End-effector prim at '{ee_prim_path}' is invalid. Check the prim path."
+        )
+        return False
+
+    ee_position = get_world_pose(ee_prim, current_frame)[0]
+    ee_pos_np = np.array(ee_position)
+
+    for path in hand_paths:
+        hand_prim = stage.GetPrimAtPath(path)
+        if not hand_prim.IsValid():
+            continue
+        hand_pos, _ = get_world_pose(hand_prim, current_frame)
+        hand_pos_np = np.array(hand_pos)
+
+        distance = np.linalg.norm(hand_pos_np - ee_pos_np)
+        # print(f"Distance from hand at {path} to end effector: {distance:.3f}")
+
+        if distance < threshold:
+            return True
+
+    return False
+
+
 i = 0
 delay = 0
 flag = 0  # 0 for moving from initial to goal position, 1 for moving from goal to initial position
 reset_needed = False
+
+paused = False
+pause_counter = 0
+PAUSE_DURATION = 100
 
 index = random.choice([3, 6, 9, 12, 15])
 print(f"Selected index at start: {index}")
@@ -922,7 +962,6 @@ while simulation_app.is_running():
                 print(f"Invalid prim path for hand {hand_index+1}")
 
         current_joint_positions = franka.get_joint_positions()
-        franka_velocities = franka.get_joint_velocities()
         obj, goal_pos = task[i]
         picking_position = get_prim_position(world.stage, obj.GetPath())
         if obj in [pomegranate1, pomegranate2, pomegranate3]:
@@ -933,6 +972,21 @@ while simulation_app.is_running():
         else:
             picking_position = goal_pos
             placing_position = initial_pos[obj]
+
+        # Safety pause logic
+        if is_hand_too_close(threshold=0.5):
+            if not paused:
+                print("Pausing controller due to nearby hand.")
+                controller.pause()
+                paused = True
+                pause_counter = 0
+        else:
+            if paused:
+                pause_counter += 1
+                if pause_counter > PAUSE_DURATION:
+                    print("Resuming controller after hand passed.")
+                    controller.resume()
+                    paused = False
         actions = controller.forward(
             picking_position=picking_position,
             placing_position=placing_position,
