@@ -2,7 +2,7 @@
 
 ## 📑 Table of Contents
 
-- [ℹ️ About](#-about)
+- [ℹ️ About](#ℹ️-about)
 - [🧪 Test Environment](#-test-environment)  
 - [⚙️ Requirements](#️-requirements) 
 - [🛠️ Installation](#️-installation)  
