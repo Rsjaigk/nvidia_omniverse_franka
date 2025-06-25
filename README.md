@@ -2,12 +2,12 @@
 
 ## 📑 Table of Contents
 
-- [ℹ️ About](#about)  
-- [🧪 Test Environment](#test-environment)  
-- [⚙️ Requirements](#requirements)  
-- [🛠️ Installation](#-installation)  
+- [ℹ️ About](#-about)
+- [🧪 Test Environment](#-test-environment)  
+- [⚙️ Requirements](#️-requirements) 
+- [🛠️ Installation](#️-installation)  
 - [🚀 How to Run](#-how-to-run)  
-- [🎥 Visualisation](#visualisation) 
+- [🎥 Visualisation](#-visualisation) 
 - [📂 Related Branches](#-related-branches)
 
 ## ℹ️ About
