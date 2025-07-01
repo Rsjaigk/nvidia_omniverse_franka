@@ -43,6 +43,8 @@ import random
 import rospy
 from geometry_msgs.msg import Pose
 from typing import Tuple
+from std_msgs.msg import String
+import json
 
 # Initialize the ROS node
 rospy.init_node("hand_pose_publisher", anonymous=True)
@@ -51,6 +53,8 @@ rospy.init_node("hand_pose_publisher", anonymous=True)
 hand_publishers = [
     rospy.Publisher(f"/hand{idx+1}/pose", Pose, queue_size=10) for idx in range(3)
 ]
+
+pixel_pub = rospy.Publisher("/hand_pixel_coords", String, queue_size=10)
 
 if not rosgraph.is_master_online():
     carb.log_error("Please run roscore before executing this script")
@@ -223,7 +227,7 @@ camera_prim1 = UsdGeom.Camera(
 )
 xform_api = UsdGeom.XformCommonAPI(camera_prim1)
 xform_api.SetTranslate(Gf.Vec3d(-2, 4.1, 3))
-xform_api.SetRotate((35, -0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+xform_api.SetRotate((35, 0.0, 90), UsdGeom.XformCommonAPI.RotationOrderXYZ)
 camera_prim1.GetHorizontalApertureAttr().Set(36)
 camera_prim1.GetVerticalApertureAttr().Set(20.25)
 camera_prim1.GetProjectionAttr().Set("perspective")
@@ -634,6 +638,150 @@ final_pos_cube = {
 hand_paths = ["/World/Hand/Hand1", "/World/Hand/Hand2", "/World/Hand/Hand3"]
 hand_positions = [get_prim_position(stage, path) for path in hand_paths]
 
+IMAGE_WIDTH = 1280
+IMAGE_HEIGHT = 720
+
+cam_xform = UsdGeom.Xformable(camera_prim1)
+cam_world_matrix = cam_xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+cam_world_matrix_inv = cam_world_matrix.GetInverse()
+print(f"Camera world matrix: {cam_world_matrix}, Inverse: {cam_world_matrix_inv}")
+print(f"Camera position: {cam_world_matrix.ExtractTranslation()}")
+
+cam_rotation_matrix = cam_world_matrix.ExtractRotationMatrix()
+forward_vec = -cam_rotation_matrix.GetColumn(2)
+up_vector = cam_rotation_matrix.GetColumn(1)
+print(f"Camera rotation matrix: {cam_rotation_matrix}")
+print(f"Camera forward vector (world coords): {forward_vec}")
+print(f"Camera up vector (world coords): {up_vector}")
+
+cam_geom = UsdGeom.Camera(camera_prim1)
+proj = cam_geom.GetProjectionAttr().Get()
+print(f"Camera projection: {proj}")
+
+meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage)
+scale_to_mm = 0.1 * meters_per_unit * 1000.0
+print(f"[INFO] Stage units: {meters_per_unit} meters per unit")
+print(f"[INFO] Scale to mm: {scale_to_mm} mm")
+
+
+def get_camera_intrinsics(camera_prim, image_width, image_height):
+    """Get the camera intrinsics from a USD camera prim.
+    Args:
+        camera_prim (Usd.Prim): The USD camera prim.
+        image_width (int): The width of the image.
+        image_height (int): The height of the image.
+    Returns:
+        dict: A dictionary containing the camera intrinsics (fx, fy, cx, cy).
+    """
+    cam_geom = UsdGeom.Camera(camera_prim)
+    # Get field of view and aperture information
+    focal_length_mm = cam_geom.GetFocalLengthAttr().Get() * scale_to_mm
+    horizontal_aperture_mm = cam_geom.GetHorizontalApertureAttr().Get() * scale_to_mm
+    vertical_aperture_mm = cam_geom.GetVerticalApertureAttr().Get() * scale_to_mm
+    print(
+        f"[DEBUG] Focal Length: {focal_length_mm} mm, Horizontal Aperture: {horizontal_aperture_mm} mm, Vertical Aperture: {vertical_aperture_mm} mm"
+    )
+
+    horizontal_offset_mm = cam_geom.GetHorizontalApertureOffsetAttr().Get()
+    vertical_offset_mm = cam_geom.GetVerticalApertureOffsetAttr().Get()
+
+    print(
+        f"[DEBUG] Horizontal Offset: {horizontal_offset_mm} mm, Vertical Offset: {vertical_offset_mm} mm"
+    )
+    fx = (focal_length_mm / horizontal_aperture_mm) * image_width
+    fy = (focal_length_mm / vertical_aperture_mm) * image_height
+    cx = image_width / 2 + (horizontal_offset_mm / horizontal_aperture_mm) * image_width
+    cy = image_height / 2 - (vertical_offset_mm / vertical_aperture_mm) * image_height
+
+    return {"fx": fx, "fy": fy, "cx": cx, "cy": cy}
+
+
+def transform_point(point, matrix):
+    """
+    Transform a 3D point using a transformation matrix.
+    Args:
+        point (tuple): A tuple of (x, y, z) coordinates of the point.
+        matrix (Gf.Matrix4d): The transformation matrix.
+    Returns:
+        tuple: A tuple of transformed (x, y, z) coordinates.
+    """
+    point_vec3 = Gf.Vec3d(*point)
+    result = matrix.Transform(point_vec3)
+    return (result[0], result[1], result[2])
+
+
+def project_point(point_3d, intrinsics, image_width, image_height, hand_id=None):
+    """
+    Project a 3D point onto the image plane using camera intrinsics.
+    Args:
+        point_3d (np.ndarray): A 3D point as a NumPy array of shape (3,).
+        intrinsics (dict): A dictionary containing camera intrinsics (fx, fy, cx, cy).
+        image_width (int): The width of the image.
+        image_height (int): The height of the image.
+    Returns:
+        tuple: A tuple of normalized pixel coordinates (u_norm, v_norm) if the point is in front of the camera, otherwise None.
+    """
+    x, y, z = point_3d
+
+    # In Isaac Sim / USD camera convention, forward is -Z
+    z_proj = -z
+    if z_proj <= 0:
+        print("[WARN] Point behind camera or on camera plane, ignoring.")
+        return None
+
+    u = intrinsics["fx"] * (x / z_proj) + intrinsics["cx"]
+    v = intrinsics["cy"] - intrinsics["fy"] * (y / z_proj)
+
+    print(f"Hand: {hand_id}, Raw projected pixel coords: u={u}, v={v}")
+
+    if 0 <= u < image_width and 0 <= v < image_height:
+        u_norm = u / image_width
+        v_norm = v / image_height
+        print(
+            f"Hand: {hand_id}, Normalized pixel coords: u_norm={u_norm}, v_norm={v_norm}"
+        )
+        return (u_norm, v_norm)
+    else:
+        print(f"[WARN] Projected coords out of bounds: u={u}, v={v}")
+        return None
+
+
+cam_pos_world = cam_world_matrix.ExtractTranslation()
+cam_pos_cam = transform_point(cam_pos_world, cam_world_matrix_inv)
+print("Camera position in camera space:", cam_pos_cam)
+
+# Transform a point in front of camera
+point_in_front_world = (
+    cam_pos_world[0] + forward_vec[0],
+    cam_pos_world[1] + forward_vec[1],
+    cam_pos_world[2] + forward_vec[2],
+)
+point_in_front_cam = transform_point(point_in_front_world, cam_world_matrix_inv)
+print("Point in front of camera (cam space):", point_in_front_cam)
+
+intrinsics = get_camera_intrinsics(camera_prim1, IMAGE_WIDTH, IMAGE_HEIGHT)
+print(intrinsics)
+
+# Test the projection function with some points
+test_point = np.array([0, 0, 1])  # Point in back of the camera
+print(project_point(test_point, intrinsics, IMAGE_WIDTH, IMAGE_HEIGHT))
+test_point = np.array([0, 0, -1])  # Point in front of the camera
+print(project_point(test_point, intrinsics, IMAGE_WIDTH, IMAGE_HEIGHT))
+
+# For mor realistic testing, cube1 position is projected into camera space
+cube1_world_pos = [-3.12, 3.41, 1.19]
+cube1_cam_pos = transform_point(cube1_world_pos, cam_world_matrix_inv)
+print("Cube1 in camera space:", cube1_cam_pos)
+
+cube_pixel_coords = project_point(cube1_cam_pos, intrinsics, IMAGE_WIDTH, IMAGE_HEIGHT)
+
+if cube_pixel_coords:
+    u_px = cube_pixel_coords[0] * IMAGE_WIDTH
+    v_px = cube_pixel_coords[1] * IMAGE_HEIGHT
+    print(f"Cube1 projected pixel coords: ({u_px:.1f}, {v_px:.1f})")
+else:
+    print("Cube1 is not visible or behind the camera.")
+
 # Define the parameters for the hand movements
 start_x = end_x = -3.12
 start_z = 1.19
@@ -788,7 +936,7 @@ def animate_hands_cubes(index, direction, offset):
     f_drop = f0 + 50 * speed_factor
     f_detach = f0 + 51 * speed_factor
     f_lift_after_drop = f0 + 60 * speed_factor
-    f_return = f0 + 90 * speed_factor
+    f_return = f0 + 93 * speed_factor
 
     hand_translate.GetAttr().Set(Gf.Vec3f(hand_home_x, hand_home_y, home_z), time=f0)
     hand_translate.GetAttr().Set(Gf.Vec3f(start_x, from_y, hover_z), time=f_above)
@@ -941,6 +1089,8 @@ while simulation_app.is_running():
             index = random.choice([3, 6, 9, 12, 15])
             print(f"Selected index: {index}")
 
+        hands_data = {}
+
         for hand_index, hand_path in enumerate(hand_paths):
             hand_prim = stage.GetPrimAtPath(hand_path)
             if hand_prim.IsValid():
@@ -955,11 +1105,36 @@ while simulation_app.is_running():
                 pose_msg.orientation.y = rot[1]
                 pose_msg.orientation.z = rot[2]
                 pose_msg.orientation.w = rot[3]
-
                 hand_publishers[hand_index].publish(pose_msg)
 
+                # Project to camera frame
+                hand_pos_cam = transform_point(pos, cam_world_matrix_inv)
+                pixel_coords = project_point(
+                    hand_pos_cam, intrinsics, IMAGE_WIDTH, IMAGE_HEIGHT, hand_index + 1
+                )
+                print(
+                    f"World point: {pos}, Camera point: {hand_pos_cam}, Z in cam space: {hand_pos_cam[2]}"
+                )
+                if pixel_coords is not None:
+                    hand_name = f"Hand{hand_index+1}"
+                    hands_data[hand_name] = {
+                        "u": float(pixel_coords[0]),
+                        "v": float(pixel_coords[1]),
+                    }
+                else:
+                    pass
+                    rospy.logwarn(
+                        f"Hand {hand_index+1} projected pixel coordinates invalid or out of view"
+                    )
             else:
-                print(f"Invalid prim path for hand {hand_index+1}")
+                print(f"[ERROR] Invalid prim path for hand {hand_index+1}")
+
+        # Publish if any hand data is available
+        if hands_data:
+            msg = String()
+            msg.data = json.dumps(hands_data)
+            pixel_pub.publish(msg)
+            rospy.loginfo(f"Published hand projections: {msg.data}")
 
         current_joint_positions = franka.get_joint_positions()
         obj, goal_pos = task[i]
@@ -980,6 +1155,9 @@ while simulation_app.is_running():
                 controller.pause()
                 paused = True
                 pause_counter = 0
+            else:
+                print("Controller already paused, waiting for hand to pass.")
+                pause_counter = 0
         else:
             if paused:
                 pause_counter += 1
@@ -987,13 +1165,13 @@ while simulation_app.is_running():
                     print("Resuming controller after hand passed.")
                     controller.resume()
                     paused = False
-        actions = controller.forward(
-            picking_position=picking_position,
-            placing_position=placing_position,
-            current_joint_positions=current_joint_positions,
-        )
-        franka.apply_action(actions)
-
+        if not paused:
+            actions = controller.forward(
+                picking_position=picking_position,
+                placing_position=placing_position,
+                current_joint_positions=current_joint_positions,
+            )
+            franka.apply_action(actions)
         if controller.is_done():
             controller.reset()
             i += 1
