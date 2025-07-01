@@ -13,9 +13,13 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from franka_pick_and_place.msg import HandStatus
 from scipy.optimize import linear_sum_assignment
+from std_msgs.msg import String
+import json
+
+projected_hand_uv = {}  # Dictionary storing latest 2D normalized positions
 
 hand_objects = ["Hand1", "Hand2", "Hand3"]
-robot = "panda_link8"
+robot = "panda_hand"
 
 hand_status_pub = rospy.Publisher("/hand_status", HandStatus, queue_size=10)
 
@@ -32,7 +36,7 @@ hand_poses = {}
 mediapipe_to_world_map = {}
 
 # Hand detection bounds
-hand_bounds = {"x": (-3.4, -2.5), "y": (2.5, 5.5), "z": (0.8, 1.6)}
+hand_bounds = {"x": (-3.4, -2.2), "y": (2.5, 5.5), "z": (0.8, 1.6)}
 
 hand_graph = nx.Graph()
 
@@ -91,19 +95,20 @@ time_to_stop = 0.743  # s
 velocity = 0.5  # m/s <= 1.15 m/s
 
 
-def get_wrist_pose_from_landmarks(hand_landmarks):
-    """Extract the wrist pose from MediaPipe hand landmarks.
-    Args:
-        hand_landmarks: MediaPipe hand landmarks object.
-    Returns:
-        Pose: A Pose object containing the wrist position.
+def hand_uv_callback(msg):
     """
-    wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
-    pose = Pose()
-    pose.position.x = wrist.x
-    pose.position.y = wrist.y
-    pose.position.z = wrist.z
-    return pose
+    Callback function for hand UV projection messages.
+    Updates the global projected_hand_uv dictionary with the latest UV coordinates.
+    Args:
+        msg (String): The String message containing JSON data with UV coordinates.
+    Returns:
+        None
+    """
+    global projected_hand_uv
+    try:
+        projected_hand_uv = json.loads(msg.data)
+    except json.JSONDecodeError as e:
+        rospy.logwarn(f"Error decoding JSON from hand projections: {e}")
 
 
 def hand_pose_callback(msg, hand_name):
@@ -146,7 +151,7 @@ def get_object_pose_tf(object_name):
         return None
 
 
-def calculate_euclidean_distance(pose1, pose2):
+def calculate_euclidean_distance_3d(pose1, pose2):
     """
     Calculate the Euclidean distance between two Pose objects.
     Args:
@@ -160,6 +165,20 @@ def calculate_euclidean_distance(pose1, pose2):
     dz = pose1.position.z - pose2.position.z
     distance = np.sqrt(dx**2 + dy**2 + dz**2)
     return round(distance, 2)
+
+
+def calculate_euclidean_distance_2d(p1, p2):
+    """
+    Calculate Euclidean distance between two 2D points.
+    Args:
+        p1 (tuple): (x1, y1)
+        p2 (tuple): (x2, y2)
+    Returns:
+        float: Euclidean distance
+    """
+    dx = p1[0] - p2[0]
+    dy = p1[1] - p2[1]
+    return np.sqrt(dx * dx + dy * dy)
 
 
 def compute_risk_score(distance, velocity, time_to_stop, d_reach, alpha):
@@ -188,7 +207,7 @@ def compute_risk_score(distance, velocity, time_to_stop, d_reach, alpha):
     return round(risk, 2)
 
 
-def get_hand_region(hand_pose, robot_pos, threshold=0.35):
+def get_hand_region(hand_pose, robot_pos, threshold=0.5):
     """
     Determine the region of the hand relative to the robot's position.
     Args:
@@ -225,11 +244,11 @@ def assess_hand_risk(robot_pos, hand_pose, velocity, time_to_stop, d_reach, alph
               risk score, and collision status.
     """
     y_diff = abs(hand_pose.position.y - robot_pos.position.y)
-    threshold = 0.35
+    threshold = 0.5
 
     rel_pos = get_hand_region(hand_pose, robot_pos, threshold)
 
-    dist_to_robot = calculate_euclidean_distance(hand_pose, robot_pos)
+    dist_to_robot = calculate_euclidean_distance_3d(hand_pose, robot_pos)
     risk_score = compute_risk_score(
         dist_to_robot, velocity, time_to_stop, d_reach, alpha
     )
@@ -505,86 +524,78 @@ def display_graph_opencv(graph):
     cv2.imshow("Hand Graph", image_bgr)
     cv2.waitKey(1)
 
-# To match MediaPipe hand poses to world hand poses, we need to define a class for normalized positions and poses.
-class NormalizedPosition:
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
+
+def get_wrist_2d_from_landmarks(landmarks):
+    """
+    Extract the wrist landmark from MediaPipe hand landmarks and return its normalized 2D coordinates.
+    Args:
+        landmarks (mp.solutions.hands.HandLandmarks): MediaPipe hand landmarks object.
+    Returns:
+        tuple: Normalized (x, y) coordinates of the wrist landmark.
+    """
+    wrist = landmarks.landmark[0]
+    # Instead of returning pixel coords, return normalized (x/w, y/h)
+    return (wrist.x, wrist.y)
 
 
-class NormalizedPose:
-    def __init__(self, x, y, z):
-        self.position = NormalizedPosition(x, y, z)
-
-
-def normalize_pose(pose, bounds):
-    norm_x = (pose.position.x - bounds["x"][0]) / (bounds["x"][1] - bounds["x"][0])
-    norm_y = (pose.position.y - bounds["y"][0]) / (bounds["y"][1] - bounds["y"][0])
-    norm_z = (pose.position.z - bounds["z"][0]) / (bounds["z"][1] - bounds["z"][0])
-    return NormalizedPose(norm_x, norm_y, norm_z)
-
-
-def match_hands_hungarian(
-    media_poses,
-    available_hands,
+def match_hands_hungarian_2d(
+    media_wrist_coords,
+    projected_uv_coords,
+    prev_mapping,
+    switch_threshold,
     cost_threshold=None,
-    verbose=True,
-    prev_mapping=None,
-    switch_threshold=0.15,
+    verbose=False,
 ):
     """
-    Match MediaPipe hand poses to available world hand poses using the Hungarian algorithm.
+    Match MediaPipe 2D wrist coords to projected 2D hand UV coords using Hungarian algorithm,
+    with temporal consistency and switch threshold logic.
 
     Args:
-        media_poses (dict): Dictionary of MediaPipe hand poses indexed by their indices.
-        available_hands (dict): Dictionary of available world hand poses indexed by their names.
-        cost_threshold (float, optional): Maximum allowed cost for a match. Defaults to None.
-        verbose (bool, optional): Whether to print detailed matching information. Defaults to True.
-        prev_mapping (dict, optional): Previous mapping to reuse if possible. Defaults to None.
+        media_wrist_coords (dict): MediaPipe wrist coords indexed by indices.
+        projected_uv_coords (dict): Projected UV coords indexed by hand names.
+        cost_threshold (float, optional): Max allowed cost for a match. Defaults to None (no threshold).
+        verbose (bool, optional): Whether to print debug info. Defaults to True.
+        prev_mapping (dict, optional): Previous mapping of mp_idx to hand_name. Defaults to None.
         switch_threshold (float, optional): Threshold for switching from previous mapping. Defaults to 0.15.
 
     Returns:
-        dict: Mapping of MediaPipe indices to world hand names.
-        If no valid matches are found, returns an empty dictionary.
+        dict: Mapping of media indices to hand names.
     """
-    if not media_poses or not available_hands:
+    media_indices = list(media_wrist_coords.keys())
+    hand_names = list(projected_uv_coords.keys())
+
+    if not media_indices or not hand_names:
         return {}
 
-    media_indices = list(media_poses.keys())
-    world_hand_names = list(available_hands.keys())
-    num_m = len(media_indices)
-    num_w = len(world_hand_names)
+    cost_matrix = np.zeros((len(media_indices), len(hand_names)))
 
-    # Cost matrix
-    cost_matrix = np.zeros((num_m, num_w))
-    for i, media_idx in enumerate(media_indices):
-        for j, hand_name in enumerate(world_hand_names):
-            media_pose = media_poses[media_idx]
-            world_pose = available_hands[hand_name]
-            norm_world_pose = normalize_pose(world_pose, hand_bounds)
-            dist = calculate_euclidean_distance(media_pose, norm_world_pose)
+    for i, mp_idx in enumerate(media_indices):
+        for j, hand_name in enumerate(hand_names):
+            u_proj, v_proj = (
+                projected_uv_coords[hand_name]["u"],
+                projected_uv_coords[hand_name]["v"],
+            )
+            u_mp, v_mp = media_wrist_coords[mp_idx]
+
+            dist = calculate_euclidean_distance_2d((u_mp, v_mp), (u_proj, v_proj))
             cost_matrix[i, j] = dist
             if verbose:
-                print(f"Cost for MP {media_idx} ↔ {hand_name}: {dist:.3f}")
+                print(f"Normalized Cost MP {mp_idx} ↔ {hand_name}: {dist:.3f}")
 
-    # Solve assignment problem
     row_idx, col_idx = linear_sum_assignment(cost_matrix)
-    mapping = {}
+    matched = {}
 
     for r, c in zip(row_idx, col_idx):
         mp_idx = media_indices[r]
-        hand_name = world_hand_names[c]
+        hand_name = hand_names[c]
         dist = cost_matrix[r, c]
 
         if prev_mapping and mp_idx in prev_mapping:
             prev_hand = prev_mapping[mp_idx]
-            if prev_hand in available_hands:
-                prev_dist = calculate_euclidean_distance(
-                    media_poses[mp_idx],
-                    normalize_pose(available_hands[prev_hand], hand_bounds),
-                )
-                # Only switch match if new match is significantly better
+            if prev_hand in hand_names:
+                prev_idx = hand_names.index(prev_hand)
+                prev_dist = cost_matrix[r, prev_idx]
+                # Only switch if new match is significantly better
                 if dist > prev_dist - switch_threshold:
                     hand_name = prev_hand
                     dist = prev_dist
@@ -593,17 +604,17 @@ def match_hands_hungarian(
                             f"[REUSED] MP {mp_idx} → {hand_name} | Prev dist: {prev_dist:.3f}"
                         )
 
-        # Cost threshold (None in this case)
         if cost_threshold is None or dist <= cost_threshold:
-            mapping[mp_idx] = hand_name
+            matched[mp_idx] = hand_name
             if verbose:
                 print(f"[MATCH] MP {mp_idx} → {hand_name} | Distance: {dist:.3f}")
-        elif verbose:
-            print(
-                f"[SKIPPED] MP {mp_idx} → {hand_name} | Distance {dist:.3f} exceeds threshold {cost_threshold:.3f}"
-            )
+        else:
+            if verbose:
+                print(
+                    f"[SKIP] MP {mp_idx} → {hand_name} | Distance: {dist:.3f} exceeds threshold"
+                )
 
-    return mapping
+    return matched
 
 
 def camera_callback(msg):
@@ -646,75 +657,103 @@ def camera_callback(msg):
         else:
             print("Robot position not found")
 
-        if results.multi_hand_landmarks:
+        h, w, _ = frame.shape
 
-            media_poses = {}
-            h, w, _ = frame.shape
+        # Filter available hands (not used and inside bounds)
+        available_hands = {
+            name: pose
+            for name, pose in hand_poses.items()
+            if name not in used_world_hands
+            and hand_bounds["x"][0] <= pose.position.x <= hand_bounds["x"][1]
+            and hand_bounds["y"][0] <= pose.position.y <= hand_bounds["y"][1]
+            and hand_bounds["z"][0] <= pose.position.z <= hand_bounds["z"][1]
+        }
 
-            for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+        print(f"Available hands: {list(available_hands.keys())}")
 
-                for lm in hand_landmarks.landmark:
-                    cx, cy = int(lm.x * w), int(lm.y * h)
-                    cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
+        if available_hands:
+            if projected_hand_uv:
+                print(f"Projected hand UV keys: {list(projected_hand_uv.keys())}")
+                print(f"Projected hand UV coords: {projected_hand_uv.values()}")
 
-                mp_pose = get_wrist_pose_from_landmarks(hand_landmarks)
-                media_poses[i] = mp_pose  # store by index
-
-                # Filter available hands (not used and inside bounds)
-                available_hands = {
-                    name: pose
-                    for name, pose in hand_poses.items()
-                    if name not in used_world_hands
-                    and hand_bounds["x"][0] <= pose.position.x <= hand_bounds["x"][1]
-                    and hand_bounds["y"][0] <= pose.position.y <= hand_bounds["y"][1]
-                    and hand_bounds["z"][0] <= pose.position.z <= hand_bounds["z"][1]
-                }
-
-            print(f"Available hands: {list(available_hands.keys())}")
-
-            if media_poses and available_hands:
-                matched = match_hands_hungarian(media_poses, available_hands)
-
-                for media_idx, hand_name in matched.items():
-                    if robot_pos and hand_name in hand_poses:
-                        used_world_hands.add(hand_name)
-                        current_frame_map[media_idx] = hand_name
-
-                        result = assess_hand_risk(
-                            robot_pos,
-                            hand_poses[hand_name],
-                            velocity,
-                            time_to_stop,
-                            d_reach,
-                            alpha,
+                if results.multi_hand_landmarks:
+                    # Extract 2D wrist coords from all MediaPipe hands
+                    media_wrist_coords = {
+                        idx: get_wrist_2d_from_landmarks(
+                            results.multi_hand_landmarks[idx]
                         )
+                        for idx in range(len(results.multi_hand_landmarks))
+                    }
 
-                        print(
-                            f"[INFO] Hand '{hand_name}' | MP idx {media_idx} | Y diff: {result['y_diff']:.3f} | Rel pos: {result['rel_pos']} | Dist: {result['dist']:.3f} | Risk: {result['risk']:.3f} | Status: {result['status']}"
-                        )
+                    print(f"Media wrist coords: {media_wrist_coords}")
 
-                        add_hand_to_graph(
-                            hand_name,
-                            hand_poses[hand_name],
-                            result["rel_pos"],
-                            result["dist"],
-                            result["risk"],
-                            result["status"],
-                        )
+                    # Match MediaPipe hands to projected & available hands
+                    matched = match_hands_hungarian_2d(
+                        media_wrist_coords,
+                        projected_hand_uv,
+                        mediapipe_to_world_map,
+                        switch_threshold=0.15,
+                        cost_threshold=None,
+                        verbose=False,
+                    )
 
-                        # Publish status
-                        hand_status = HandStatus()
-                        hand_status.hand_name = hand_name
-                        hand_status.detected = True
-                        hand_status.distance_to_robot = result["dist"]
-                        hand_status.relative_position = result["rel_pos"]
-                        hand_status.y_diff = result["y_diff"]
-                        hand_status.risk_level = result["status"]
-                        hand_status_pub.publish(hand_status)
+                    # Only draw and process matched hands
+                    for media_idx, hand_name in matched.items():
+                        if robot_pos and hand_name in available_hands:
+                            hand_landmarks = results.multi_hand_landmarks[media_idx]
 
-            # Update global mapping
-            mediapipe_to_world_map = current_frame_map
+                            # Draw MediaPipe landmarks on frame for matched hand
+                            mp_draw.draw_landmarks(
+                                frame, hand_landmarks, mp_hands.HAND_CONNECTIONS
+                            )
+                            for lm in hand_landmarks.landmark:
+                                cx, cy = int(lm.x * w), int(lm.y * h)
+                                cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
+
+                            used_world_hands.add(hand_name)
+                            current_frame_map[media_idx] = hand_name
+
+                            result = assess_hand_risk(
+                                robot_pos,
+                                hand_poses[hand_name],
+                                velocity,
+                                time_to_stop,
+                                d_reach,
+                                alpha,
+                            )
+
+                            print(
+                                f"[INFO] Hand '{hand_name}' | MP idx {media_idx} | Y diff: {result['y_diff']:.3f} | Rel pos: {result['rel_pos']} | Dist: {result['dist']:.3f} | Risk: {result['risk']:.3f} | Status: {result['status']}"
+                            )
+
+                            add_hand_to_graph(
+                                hand_name,
+                                hand_poses[hand_name],
+                                result["rel_pos"],
+                                result["dist"],
+                                result["risk"],
+                                result["status"],
+                            )
+
+                            # Publish status
+                            hand_status = HandStatus()
+                            hand_status.hand_name = hand_name
+                            hand_status.detected = True
+                            hand_status.distance_to_robot = result["dist"]
+                            hand_status.relative_position = result["rel_pos"]
+                            hand_status.y_diff = result["y_diff"]
+                            hand_status.risk_level = result["status"]
+                            hand_status_pub.publish(hand_status)
+
+                    # Update global mapping with only matched hands
+                    mediapipe_to_world_map = current_frame_map
+
+                else:
+                    print("No MediaPipe hand landmarks detected")
+
+            else:
+                print("Projected hand UV coords missing or empty!")
+
         else:
             mediapipe_to_world_map.clear()
             cv2.putText(
@@ -813,6 +852,8 @@ def main():
             Pose,
             lambda msg, h=hand: hand_pose_callback(msg, h),
         )
+
+    rospy.Subscriber("/hand_pixel_coords", String, hand_uv_callback)
 
     rospy.loginfo("Hand tracking node running...")
     rospy.spin()
