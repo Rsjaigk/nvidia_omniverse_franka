@@ -163,18 +163,18 @@ The project includes screenshots from four camera views demonstrating the robot 
 #### Isaac Sim Perspective View
 A video showcasing the robot simulation environment and system operation in Isaac Sim.
 
-<video width="640" height="480" controls>
-  <source src="media/videos/perspective.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
-</video>
+- index: 3
+ 
+https://github.com/user-attachments/assets/a73de357-77c5-41f7-a322-f72c518ae8ac
+
+- index: 9
+
+https://github.com/user-attachments/assets/bc8162ea-82d3-4323-81dd-d064ae714546
 
 #### Hand Tracking Overlay
 A video displaying MediaPipe hand tracking overlaid on Camera1 feed, alongside real-time risk score graphs.
 
-<video width="640" height="480" controls>
-  <source src="media/videos/final_output.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
-</video>
+https://github.com/user-attachments/assets/f4d3297a-faff-457e-9549-0f4d14722264
 
 ## 📂 Related Branches
 
