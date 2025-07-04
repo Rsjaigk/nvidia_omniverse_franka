@@ -727,7 +727,7 @@ def project_point(point_3d, intrinsics, image_width, image_height, hand_id=None)
         return None
 
     u = intrinsics["fx"] * (x / z_proj) + intrinsics["cx"]
-    v = intrinsics["cy"] - intrinsics["fy"] * (y / z_proj)
+    v = intrinsics["fy"] * (y / z_proj) + intrinsics["cy"]
 
     print(f"Hand: {hand_id}, Raw projected pixel coords: u={u}, v={v}")
 
