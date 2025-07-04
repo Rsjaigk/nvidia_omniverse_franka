@@ -675,9 +675,9 @@ def get_camera_intrinsics(camera_prim, image_width, image_height):
     """
     cam_geom = UsdGeom.Camera(camera_prim)
     # Get field of view and aperture information
-    focal_length_mm = cam_geom.GetFocalLengthAttr().Get() * scale_to_mm
-    horizontal_aperture_mm = cam_geom.GetHorizontalApertureAttr().Get() * scale_to_mm
-    vertical_aperture_mm = cam_geom.GetVerticalApertureAttr().Get() * scale_to_mm
+    focal_length_mm = cam_geom.GetFocalLengthAttr().Get()
+    horizontal_aperture_mm = cam_geom.GetHorizontalApertureAttr().Get()
+    vertical_aperture_mm = cam_geom.GetVerticalApertureAttr().Get()
     print(
         f"[DEBUG] Focal Length: {focal_length_mm} mm, Horizontal Aperture: {horizontal_aperture_mm} mm, Vertical Aperture: {vertical_aperture_mm} mm"
     )
