@@ -197,9 +197,6 @@ try:
                     "PublishTF.inputs:targetPrims",
                     [
                         usdrt.Sdf.Path(FRANKA_STAGE_PATH),
-                        usdrt.Sdf.Path("/World/Hand/Hand1"),
-                        usdrt.Sdf.Path("/World/Hand/Hand2"),
-                        usdrt.Sdf.Path("/World/Hand/Hand3"),
                     ],
                 ),
                 (
